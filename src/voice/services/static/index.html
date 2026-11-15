@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>المساعد الصوتي</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: light dark; --accent: #0f766e; }
+  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.7; }
+  h1 { font-size: 1.4rem; }
+  #talk { font-size: 1.2rem; padding: 1rem 2rem; border-radius: 999px; border: 0; background: var(--accent); color: #fff; cursor: pointer; user-select: none; touch-action: none; }
+  #talk.recording { background: #b91c1c; }
+  #talk:disabled { opacity: .5; cursor: wait; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; }
+  dt { font-weight: 600; }
+  #status, #timings { color: GrayText; font-size: .9rem; }
+  #timings { direction: ltr; text-align: right; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<h1>المساعد الصوتي</h1>
+<p>اضغط مع الاستمرار وتكلم، ثم اترك الزر.</p>
+<button id="talk" type="button">اضغط وتكلم</button>
+<p id="status" role="status"></p>
+<dl>
+  <dt>سمعت</dt><dd id="heard">—</dd>
+  <dt>الإجابة</dt><dd id="answer">—</dd>
+</dl>
+<p id="timings"></p>
+<audio id="player" controls hidden></audio>
+<script>
+"use strict";
+const MAX_SECONDS = 15;  // the services refuse audio over 20 s (MAX_AUDIO_SECONDS)
+const talk = document.getElementById("talk");
+const statusLine = document.getElementById("status");
+const player = document.getElementById("player");
+let recorder = null, chunks = [], stopTimer = null, held = false;
+
+function show(id, text) { document.getElementById(id).textContent = text || "—"; }
+
+async function start() {
+  if (recorder || talk.disabled) return;
+  held = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, noiseSuppression: true } });
+  } catch (err) {
+    statusLine.textContent = "لا يمكن الوصول إلى الميكروفون (" + err.name + ")";
+    return;
+  }
+  if (!held) { stream.getTracks().forEach((t) => t.stop()); return; }  // released before the microphone opened
+  chunks = [];
+  recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  recorder.onstop = () => { stream.getTracks().forEach((t) => t.stop()); send(new Blob(chunks, { type: recorder.mimeType })); recorder = null; };
+  recorder.start();
+  talk.classList.add("recording");
+  statusLine.textContent = "أستمع…";
+  stopTimer = setTimeout(stop, MAX_SECONDS * 1000);
+}
+
+function stop() {
+  held = false;
+  clearTimeout(stopTimer);
+  if (recorder && recorder.state === "recording") recorder.stop();
+  talk.classList.remove("recording");
+}
+
+async function send(blob) {
+  talk.disabled = true;
+  statusLine.textContent = "أفكر…";
+  const form = new FormData();
+  form.append("file", blob, "question." + (blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm"));
+  try {
+    const response = await fetch("/api/turn", { method: "POST", body: form });
+    const body = await response.json();
+    if (!response.ok) {
+      statusLine.textContent = "خطأ " + response.status + ": " + (body.error ? body.error.code : "");
+      return;
+    }
+    show("heard", body.heard || "(لم أسمع كلاما)");
+    show("answer", body.answer);
+    const t = body.timings;
+    document.getElementById("timings").textContent =
+      ["stt", "chat", "tts"].filter((k) => k in t).map((k) => k + " " + t[k] + " s").join(" · ") + " · total " + t.total + " s";
+    statusLine.textContent = "";
+    if (body.audio) {
+      player.src = "data:audio/wav;base64," + body.audio;
+      player.hidden = false;
+      player.play().catch(() => {});
+    }
+  } catch (err) {
+    statusLine.textContent = "تعذر الاتصال بالخادم";
+  } finally {
+    talk.disabled = false;
+  }
+}
+
+talk.addEventListener("pointerdown", (e) => { e.preventDefault(); start(); });
+talk.addEventListener("pointerup", stop);
+talk.addEventListener("pointerleave", stop);
+document.addEventListener("keydown", (e) => { if (e.code === "Space" && !e.repeat) { e.preventDefault(); start(); } });
+document.addEventListener("keyup", (e) => { if (e.code === "Space") stop(); });
+</script>
+</body>
+</html>

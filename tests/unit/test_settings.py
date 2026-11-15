@@ -15,6 +15,12 @@ def test_defaults_are_the_laptop_values():
     assert settings.openai_base_url == "http://127.0.0.1:11434/v1"
     assert settings.chat_model == "phi4-mini:3.8b"
     assert settings.chat_reasoning_effort == ""
+    assert settings.stt_url == "http://127.0.0.1:8001/v1"
+    assert settings.tts_url == "http://127.0.0.1:8002/v1"
+    assert settings.max_upload_bytes == 2 * 1024 * 1024
+    assert settings.max_audio_seconds == 20.0
+    assert settings.max_speech_chars == 600
+    assert settings.max_waiting == 4
 
 
 def test_environment_overrides():
@@ -28,6 +34,8 @@ def test_environment_overrides():
             "CHAT_MODEL": "gpt-5.4-mini",
             "CHAT_REASONING_EFFORT": "low",
             "CHAT_MAX_TOKENS": "400",
+            "STT_URL": "http://stt:8000/v1",
+            "MAX_WAITING": "0",
         }
     )
     assert settings.stt_model_dir == Path("/models/stt-turbo")
@@ -37,3 +45,5 @@ def test_environment_overrides():
     assert settings.chat_model == "gpt-5.4-mini"
     assert settings.chat_reasoning_effort == "low"
     assert settings.chat_max_tokens == 400
+    assert settings.stt_url == "http://stt:8000/v1"
+    assert settings.max_waiting == 0

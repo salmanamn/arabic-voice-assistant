@@ -5,16 +5,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+import numpy as np
+
 from voice.settings import Settings
 
 REQUIRED_FILES = ("model.bin", "config.json", "tokenizer.json")
+SAMPLE_RATE = 16000  # Whisper works on 16 kHz mono
 
 
 @dataclass(frozen=True)
 class Transcript:
     text: str
     audio_seconds: float
-    seconds: float  # wall time: decoding the audio file + recognition
+    seconds: float  # wall time: decoding the audio file (if given a file) + recognition
 
     @property
     def rtf(self) -> float:
@@ -46,8 +49,15 @@ class SpeechToText:
             beam_size=settings.stt_beam_size,
         )
 
-    def transcribe(self, audio: str | Path | BinaryIO) -> Transcript:
-        """Transcribe one utterance. `audio` is a file path or a binary file object (any format FFmpeg reads)."""
+    @staticmethod
+    def decode(audio: str | Path | BinaryIO) -> np.ndarray:
+        """Any format FFmpeg reads -> 16 kHz mono float32 samples. Raises on input that is not audio."""
+        from faster_whisper import decode_audio
+
+        return decode_audio(str(audio) if isinstance(audio, Path) else audio, sampling_rate=SAMPLE_RATE)
+
+    def transcribe(self, audio: str | Path | BinaryIO | np.ndarray) -> Transcript:
+        """Transcribe one utterance: a file path, a binary file object, or samples from `decode`."""
         started = time.perf_counter()
         segments, info = self._model.transcribe(
             str(audio) if isinstance(audio, Path) else audio,

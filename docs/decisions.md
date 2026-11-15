@@ -45,3 +45,27 @@
 
 ## D9 — One dependency group per future image
 - `pyproject.toml` keeps faster-whisper (`stt`), Piper (`tts`) and the hub client (`models`) in separate dependency groups, all installed by default on the laptop. The speech-to-text image will install only `stt`, the text-to-speech image only `tts` (D3), and neither needs the hub client at run time.
+
+## D10 — Three services on OpenAI's routes
+- `stt` serves `POST /v1/audio/transcriptions` (multipart `file`, `model`, `language`, `response_format` json|text → `{"text", "duration"}`), `tts` serves `POST /v1/audio/speech` (JSON `input`, `model`, `voice`, `response_format` wav → WAV bytes), the gateway serves `POST /api/turn` (multipart `file` → `{"heard", "answer", "audio", "timings"}`) and the push-to-talk page at `/`.
+- Speaking OpenAI's shapes means the gateway needs one client library for all three steps, and a hosted service (Azure OpenAI's audio routes, Azure Speech behind an adapter) can replace a pod by changing `STT_URL`, `TTS_URL` or `OPENAI_BASE_URL`. Only what this project uses is implemented: `model` and `voice` are accepted and ignored (one model per process), other languages, formats and speeds are refused with 400.
+- Only the `tts` process imports Piper (GPL, D3); the gateway reaches it over HTTP.
+- The gateway returns the answer's audio as base64 inside the JSON (about 200 KB per answer) instead of streaming: one request per turn, simple to test. Streaming belongs with lower-latency work, not with this milestone.
+
+## D11 — One model call at a time per process, a short queue, then 503
+- A Whisper or Piper model uses all the CPU threads it is given, so two calls at once in one process only slow each other down. Each speech service runs one call at a time (`Worker`, off the event loop) and lets at most `MAX_WAITING` (4) requests wait; the next one gets 503 `busy` at once instead of a timeout minutes later.
+- One request is one job (decode, length check, recognition together), so a full queue gives 503 and never a misleading 400.
+- More capacity is more processes (replicas on Kubernetes), not more threads in one.
+
+## D12 — Health: liveness and readiness only about the process itself
+- `/healthz`: the process answers. `/readyz`: the model is loaded. Models load before the port opens (FastAPI lifespan), so a starting pod refuses connections until it can work: on Kubernetes that is a startup probe plus a readiness probe.
+- The gateway's readiness does not check the speech services or the chat endpoint: a dependency being down would otherwise take the gateway out of the load balancer too, and the user would get a connection error instead of `503 stt_unavailable`. Each step's failure is named in the error code (`stt_`, `chat_`, `tts_` + `unavailable` | `busy` | `failed`).
+
+## D13 — Limits, errors and logs
+- Limits (environment variables): recording ≤ 2 MiB (`MAX_UPLOAD_BYTES`, checked by the gateway and again by `stt`), ≤ 20 s after decoding (`MAX_AUDIO_SECONDS`; the decoded length, so a small compressed file cannot carry an hour of audio), answer to speak ≤ 600 characters (`MAX_SPEECH_CHARS`; the gateway cuts a longer answer at a word boundary). The page stops recording at 15 s.
+- Error bodies are OpenAI-style `{"error": {"code", "message"}}` with fixed messages; FastAPI's validation errors are replaced by a 400 that names the fields only (its default 422 echoes the submitted values). As in ticket-triage-agent, errors never echo input.
+- Logs carry lengths and times only (`heard 28 chars, answered 31 chars, {'stt': 2.07, ...}`): what the user said and heard stays out of them. A unit test checks this.
+
+## D14 — M2 runs as processes on the laptop; containers come in M4
+- The milestone plan had `docker compose up` running everything in M2. That needs images, which are M4's subject (non-root, read-only, no models inside). M2 runs the three services with `uv run uvicorn` in three terminals; only Ollama is a container. M4 adds the images and moves all four into compose.
+- Ports: `stt` 8001, `tts` 8002, gateway 8080, all on 127.0.0.1. The page needs a secure context for the microphone; `http://localhost` is one.
