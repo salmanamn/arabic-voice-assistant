@@ -1,0 +1,68 @@
+{
+  "stt-small": {
+    "files": {
+      "config.json": {
+        "sha256": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
+        "size": 2370
+      },
+      "model.bin": {
+        "sha256": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+        "size": 483546902
+      },
+      "tokenizer.json": {
+        "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+        "size": 2203239
+      },
+      "vocabulary.txt": {
+        "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+        "size": 459861
+      }
+    },
+    "repo": "Systran/faster-whisper-small",
+    "revision": "536b0662742c02347bc0e980a01041f333bce120"
+  },
+  "stt-turbo": {
+    "files": {
+      "config.json": {
+        "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+        "size": 2263
+      },
+      "model.bin": {
+        "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+        "size": 1617884929
+      },
+      "preprocessor_config.json": {
+        "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+        "size": 340
+      },
+      "tokenizer.json": {
+        "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+        "size": 2710337
+      },
+      "vocabulary.json": {
+        "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+        "size": 1068114
+      }
+    },
+    "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+  },
+  "tts-ar-kareem-medium": {
+    "files": {
+      "MODEL_CARD": {
+        "sha256": "38e1e4f94c4cb9eda041a639096763a8c5681d0be5a5b3e22f990aed6bb4b86e",
+        "size": 283
+      },
+      "ar_JO-kareem-medium.onnx": {
+        "sha256": "9e95cab07b679da603bba17c4dec7ab3111320571964ee95c0379603c086491e",
+        "size": 63201294
+      },
+      "ar_JO-kareem-medium.onnx.json": {
+        "sha256": "ea6d9b9d9076dbdb6bf5c98c6a141ef154959d2359709b37855727964e7d6c4d",
+        "size": 5024
+      }
+    },
+    "repo": "rhasspy/piper-voices",
+    "revision": "6b9cfaacb4fb2e02a9621227e3c1a48bec9710c3"
+  }
+}
