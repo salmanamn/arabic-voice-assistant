@@ -82,6 +82,18 @@ def test_reasoning_model_gets_no_temperature_and_no_max_tokens(endpoint):
     assert "max_tokens" not in body
 
 
+def test_thinking_off_keeps_the_classic_shape(endpoint):
+    assistant = Assistant(base_url=endpoint, api_key="k", model="qwen3.5:4b", max_tokens=160, reasoning_effort="none")
+
+    assistant.reply("سؤال")
+
+    body = FakeChat.requests[0]["body"]
+    assert body["reasoning_effort"] == "none"
+    assert body["temperature"] == 0.2
+    assert body["max_tokens"] == 160
+    assert "max_completion_tokens" not in body
+
+
 def test_empty_content_becomes_an_empty_reply(endpoint, monkeypatch):
     monkeypatch.setattr(FakeChat, "answer", None)
     assistant = Assistant(base_url=endpoint, api_key="k", model="m")
