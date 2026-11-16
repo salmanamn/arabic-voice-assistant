@@ -108,14 +108,14 @@ def build_fleurs(count: int, revision: str | None = None) -> None:
     write_manifest(directory, utterances)
     source.write_text(
         f"{FLEURS_REPO} @ {revision}, data/{FLEURS_LANG} test split, first {count} sentences of at most "
-        f"{MAX_SECONDS:g} s (one recording each, speaker gender balanced). Licence: CC BY 4.0. "
+        f"{MAX_SECONDS:g} s (one recording each, rotating over the speakers). Licence: CC BY 4.0. "
         "Conneau et al., FLEURS (2022).\n",
         encoding="utf-8",
     )
     total = sum(u.seconds for u in utterances)
-    genders = Counter(row["gender"].lower() for row in rows)
-    voices = ", ".join(f"{n} {gender}" for gender, n in sorted(genders.items()))
-    print(f"{len(utterances)} sentences ({voices}), {total / 60:.1f} min of audio in {directory.relative_to(ROOT)}")
+    takes = Counter(row["take"] + 1 for row in rows)
+    spread = ", ".join(f"{n}x recording {take}" for take, n in sorted(takes.items()))
+    print(f"{len(utterances)} sentences ({spread}), {total / 60:.1f} min of audio in {directory.relative_to(ROOT)}")
 
 
 def status() -> None:

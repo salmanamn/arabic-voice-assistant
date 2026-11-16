@@ -5,18 +5,18 @@
 | Model | Set | n | CER | WER | p50 s | p90 s | RTF | Threads |
 |---|---|---|---|---|---|---|---|---|
 | `stt-small` | own | 20 | 10.1% | 20.9% | 1.75 | 1.96 | 0.25 | 6 |
-| `stt-small` | fleurs | 40 | 11.9% | 28.7% | 2.82 | 3.42 | 0.27 | 6 |
+| `stt-small` | fleurs | 40 | 7.6% | 23.7% | 2.71 | 3.23 | 0.24 | 6 |
 | `stt-turbo` | own | 20 | 7.2% | 13.9% | 8.01 | 8.99 | 1.19 | 6 |
-| `stt-turbo` | fleurs | 40 | 8.0% | 15.4% | 7.92 | 8.61 | 0.75 | 6 |
+| `stt-turbo` | fleurs | 40 | 3.9% | 11.0% | 10.30 | 12.17 | 0.94 | 6 |
 
 By style:
 
 - `stt-small` own/gulf: n=6, CER 9.6%, WER 27.6%
 - `stt-small` own/msa: n=14, CER 10.2%, WER 18.6%
-- `stt-small` fleurs/fleurs-female: n=40, CER 11.9%, WER 28.7%
+- `stt-small` fleurs/fleurs-female: n=40, CER 7.6%, WER 23.7%
 - `stt-turbo` own/gulf: n=6, CER 10.4%, WER 34.5%
 - `stt-turbo` own/msa: n=14, CER 6.2%, WER 7.0%
-- `stt-turbo` fleurs/fleurs-female: n=40, CER 8.0%, WER 15.4%
+- `stt-turbo` fleurs/fleurs-female: n=40, CER 3.9%, WER 11.0%
 
 **Choice: `stt-small`** — own-set CER 10.1% at p90 1.96 s, within the 2.5 s budget; over budget: stt-turbo p90 8.99 s.
 

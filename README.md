@@ -37,7 +37,7 @@ What the compose file starts:
 | Service | Image | Port on 127.0.0.1 | Memory limit |
 |---|---|---|---|
 | `models` (runs once) | `voice-models:local` | — | 512 MB |
-| `stt` | `voice-stt:local` | 8001 | 1408 MB |
+| `stt` | `voice-stt:local` | 8001 | 2048 MB |
 | `tts` | `voice-tts:local` (the only image with Piper) | 8002 | 1024 MB |
 | `gateway` | `voice-gateway:local` | 8080 | 256 MB |
 | `ollama` | `ollama/ollama`, pinned by digest | 11434 | 4480 MB |

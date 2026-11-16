@@ -49,8 +49,8 @@ services:
       STT_THREADS: "${STT_THREADS:-6}"
     volumes:
       - models:/models:ro
-    mem_limit: 1408m # M3 peak 878 MB x 1.5 (D21)
-    memswap_limit: 1408m # same as the limit: no swap, so too little memory shows as a kill and not as slowness
+    mem_limit: 2048m # highest peak 1328 MB (M4, browser turns) x 1.5 (D21)
+    memswap_limit: 2048m # same as the limit: no swap, so too little memory shows as a kill and not as slowness
     healthcheck: &ready
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
       interval: 15s

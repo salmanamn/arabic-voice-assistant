@@ -4,7 +4,7 @@ there with one line per utterance: id, file (relative to the set directory), ref
 - own:    your recordings of the prompts in eval/speech/own.jsonl (the product's case: short questions, one speaker,
           your microphone). Imported from the newest files in a folder, in recording order.
 - fleurs: the first N sentences of Google's FLEURS Arabic (ar_eg) test split: read speech, one recording per
-          sentence, the speakers' gender balanced, CC BY 4.0. The archive is untrusted input: only the selected
+          sentence, rotating over each sentence's speakers, CC BY 4.0. The archive is untrusted input: only the selected
           .wav members are read, by name, and written under names we choose.
 """
 
@@ -69,10 +69,10 @@ def select_fleurs(tsv: str, count: int, max_seconds: float) -> list[dict]:
     first) that have a recording of at most `max_seconds`. Columns: id, file_name, raw_transcription, transcription,
     characters, num_samples, gender.
 
-    FLEURS has up to three recordings per sentence, by different speakers; the TSV names no speaker, only the
-    gender. To get more than one voice into the set, each sentence takes a recording of the gender that has fewer
-    picks so far (FEMALE on a tie), and whatever it has when it has none of that gender. Within a gender the first
-    row in the file wins.
+    FLEURS collected each sentence from three different native speakers and kept between zero and three of those
+    recordings. The TSV names no speaker, and its gender column is no help either (ar_eg test: FEMALE on all 428
+    rows). To spread the set over speakers, the n-th selected sentence takes its (n mod k)-th usable recording, in
+    file order, where k is how many it has. Every row carries `take` (0-based position among the usable ones).
     """
     by_sentence: dict[int, list[dict]] = {}
     for line in tsv.splitlines():
@@ -91,13 +91,10 @@ def select_fleurs(tsv: str, count: int, max_seconds: float) -> list[dict]:
                 "gender": cols[6].strip().upper(),
             }
         )
-    rows: list[dict] = []
-    picked = {"FEMALE": 0, "MALE": 0}
-    for _, recordings in sorted(by_sentence.items())[:count]:
-        wanted = "MALE" if picked["MALE"] < picked["FEMALE"] else "FEMALE"
-        row = next((r for r in recordings if r["gender"] == wanted), recordings[0])
-        picked[row["gender"]] = picked.get(row["gender"], 0) + 1
-        rows.append(row)
+    rows = []
+    for n, (_, recordings) in enumerate(sorted(by_sentence.items())[:count]):
+        take = n % len(recordings)
+        rows.append({**recordings[take], "take": take})
     return rows
 
 
