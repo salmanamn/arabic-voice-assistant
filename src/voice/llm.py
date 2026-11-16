@@ -3,6 +3,9 @@
 Locally that is Ollama's /v1 API (the key is ignored). On Azure it will be Azure OpenAI's v1 endpoint with an
 Entra ID token as the key; reasoning models there take `reasoning_effort` and `max_completion_tokens` and reject
 `temperature` and `max_tokens`, which is what `reasoning_effort` switches (same split as ticket-triage-agent D19).
+
+`reasoning_effort="none"` is the exception: a model that thinks by default (Qwen 3.5, Gemma 4 on Ollama) is asked
+to answer without thinking, and keeps the classic request shape (D17).
 """
 
 import time
@@ -57,10 +60,12 @@ class Assistant:
         )
 
     def reply(self, question: str) -> Reply:
-        if self.reasoning_effort:
+        if self.reasoning_effort and self.reasoning_effort != "none":
             shape = {"reasoning_effort": self.reasoning_effort, "max_completion_tokens": self.max_tokens}
         else:
             shape = {"temperature": TEMPERATURE, "max_tokens": self.max_tokens}
+            if self.reasoning_effort == "none":
+                shape["reasoning_effort"] = "none"  # thinking off: a voice turn can't wait for a hidden monologue
         started = time.perf_counter()
         completion = self._client.chat.completions.create(
             model=self.model,

@@ -1,6 +1,9 @@
+import os
 from pathlib import Path
 
-from voice.settings import default_threads, load
+import pytest
+
+from voice.settings import default_threads, load, physical_cores
 
 
 def test_defaults_are_the_laptop_values():
@@ -47,3 +50,48 @@ def test_environment_overrides():
     assert settings.chat_max_tokens == 400
     assert settings.stt_url == "http://stt:8000/v1"
     assert settings.max_waiting == 0
+
+
+def fake_sysfs(root, siblings: dict[int, str], name: str = "core_cpus_list"):
+    for cpu, value in siblings.items():
+        topology = root / f"cpu{cpu}" / "topology"
+        topology.mkdir(parents=True)
+        (topology / name).write_text(value + "\n")
+    return root
+
+
+# An i7-9750H as Linux numbers it: 6 cores, 12 CPUs, CPU n and n+6 share a core.
+I7_9750H = {cpu: f"{cpu % 6},{cpu % 6 + 6}" for cpu in range(12)}
+
+
+@pytest.mark.parametrize(
+    ("cpus", "cores"),
+    [
+        (range(12), 6),  # every CPU: hyper-threads count once
+        ([0, 6], 1),  # both threads of one core
+        ([0, 1, 2], 3),  # one thread of three cores
+        ([0, 1, 2, 6, 7, 8], 3),
+        ([], 0),
+    ],
+)
+def test_physical_cores_counts_hyper_threads_once(tmp_path, cpus, cores):
+    assert physical_cores(cpus, fake_sysfs(tmp_path, I7_9750H)) == cores
+
+
+def test_physical_cores_reads_range_lists_and_the_older_file_name(tmp_path):
+    sysfs = fake_sysfs(tmp_path, {0: "0-1", 1: "0-1", 2: "2-3", 3: "2-3"}, name="thread_siblings_list")
+    assert physical_cores(range(4), sysfs) == 2
+
+
+def test_without_topology_every_cpu_is_a_core(tmp_path):
+    assert physical_cores(range(5), tmp_path) == 5
+
+
+def test_default_threads_follows_affinity_and_the_cap(tmp_path, monkeypatch):
+    sysfs = fake_sysfs(tmp_path, {cpu: str(cpu) for cpu in range(16)})  # 16 cores without hyper-threading
+    monkeypatch.setattr(os, "sched_getaffinity", lambda _: set(range(16)))
+    assert default_threads(sysfs) == 8
+    monkeypatch.setattr(os, "sched_getaffinity", lambda _: {0, 1, 2})
+    assert default_threads(sysfs) == 3
+    monkeypatch.setattr(os, "sched_getaffinity", lambda _: set(range(12)))
+    assert default_threads(fake_sysfs(tmp_path / "i7", I7_9750H)) == 6

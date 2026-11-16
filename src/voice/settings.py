@@ -2,8 +2,12 @@
 in a container and on AKS; the defaults are the laptop values."""
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+SYSFS_CPU = Path("/sys/devices/system/cpu")
+MAX_THREADS = 8  # Whisper gains little beyond 8 threads
 
 
 @dataclass(frozen=True)
@@ -41,9 +45,30 @@ class Settings:
         return self.models_dir / self.tts_voice
 
 
-def default_threads() -> int:
-    """CPUs this process may use (respects container CPU pinning), capped: Whisper gains little beyond 8."""
-    return max(1, min(len(os.sched_getaffinity(0)), 8))
+def physical_cores(cpus: Iterable[int], sysfs: Path = SYSFS_CPU) -> int:
+    """Physical cores among `cpus`. Hyper-threads of one core share its arithmetic units, so they count once.
+
+    Each CPU's `topology/core_cpus_list` names every CPU on the same core (for example "0,6" or "0-1"); CPUs with
+    the same list are one core. Older kernels only have `thread_siblings_list`; without either file each CPU counts
+    as a core of its own.
+    """
+    cores = set()
+    for cpu in cpus:
+        topology = sysfs / f"cpu{cpu}" / "topology"
+        for name in ("core_cpus_list", "thread_siblings_list"):
+            try:
+                cores.add((topology / name).read_text().strip())
+                break
+            except OSError:
+                continue
+        else:
+            cores.add(f"cpu{cpu}")
+    return len(cores)
+
+
+def default_threads(sysfs: Path = SYSFS_CPU) -> int:
+    """Physical cores this process may run on (respects CPU pinning), capped at MAX_THREADS (D7)."""
+    return max(1, min(physical_cores(os.sched_getaffinity(0), sysfs), MAX_THREADS))
 
 
 def load(env: dict[str, str] | None = None) -> Settings:
