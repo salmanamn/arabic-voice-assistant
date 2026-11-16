@@ -1,0 +1,9 @@
+# The build context is an allow-list: only what the images are built from leaves the working tree.
+# Model files, recordings (data/), .env and .git can therefore never end up in an image.
+*
+!pyproject.toml
+!uv.lock
+!models.lock.json
+!src/
+**/__pycache__/
+**/*.pyc

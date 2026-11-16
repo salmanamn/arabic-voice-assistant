@@ -1,0 +1,4 @@
+stt: 47 High/Critical in total, fixable or not
+tts: 47 High/Critical in total, fixable or not
+gateway: 47 High/Critical in total, fixable or not
+models: 47 High/Critical in total, fixable or not
