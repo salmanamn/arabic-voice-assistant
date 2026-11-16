@@ -63,9 +63,10 @@ TSV = "\n".join(
 
 def test_select_fleurs_one_recording_per_sentence_lowest_id_first_and_short_only():
     rows = select_fleurs(TSV, count=5, max_seconds=20)
-    assert [(r["sentence"], r["file_name"]) for r in rows] == [(300, "300.wav"), (1907, "111.wav")]
+    # 1907 is the second sentence selected, so it takes its second recording (rotation)
+    assert [(r["sentence"], r["file_name"]) for r in rows] == [(300, "300.wav"), (1907, "112.wav")]
     assert rows[1]["text"] == "الجملة الأولى."  # raw transcription, punctuation kept (normalised at scoring)
-    assert rows[1]["seconds"] == 6.0
+    assert rows[1]["seconds"] == 99000 / 16000
     assert len(select_fleurs(TSV, count=1, max_seconds=20)) == 1
 
 
@@ -73,26 +74,26 @@ def fleurs_row(sentence: int, file_name: str, gender: str, samples: int = 96000)
     return f"{sentence}\t{file_name}\tجملة {sentence}.\tجملة {sentence}\t8\t{samples}\t{gender}"
 
 
-def test_select_fleurs_balances_speaker_gender():
-    # Every sentence has a female recording first, then a male one: taking the first would give four female voices.
-    tsv = "\n".join(fleurs_row(n, f"{n}{g[0]}.wav", g) for n in (1, 2, 3, 4) for g in ("FEMALE", "MALE"))
+def test_select_fleurs_rotates_over_each_sentences_recordings():
+    # Three recordings (three speakers) for every sentence, all labelled FEMALE as in ar_eg: taking the first
+    # recording each time would always take the same position.
+    tsv = "\n".join(fleurs_row(n, f"{n}-{k}.wav", "FEMALE") for n in (1, 2, 3, 4) for k in (0, 1, 2))
     rows = select_fleurs(tsv, count=4, max_seconds=20)
-    assert [r["file_name"] for r in rows] == ["1F.wav", "2M.wav", "3F.wav", "4M.wav"]
+    assert [r["file_name"] for r in rows] == ["1-0.wav", "2-1.wav", "3-2.wav", "4-0.wav"]
+    assert [r["take"] for r in rows] == [0, 1, 2, 0]
 
 
-def test_select_fleurs_takes_what_a_sentence_has_and_catches_up_later():
+def test_select_fleurs_wraps_around_for_sentences_with_fewer_recordings():
     tsv = "\n".join(
         [
-            fleurs_row(1, "1F.wav", "FEMALE"),
-            fleurs_row(2, "2F.wav", "FEMALE"),  # no male recording: female again
-            fleurs_row(3, "3F.wav", "FEMALE"),
-            fleurs_row(3, "3M.wav", "MALE"),
-            fleurs_row(4, "4F.wav", "FEMALE"),
-            fleurs_row(4, "4M.wav", "MALE"),  # male is still behind, so male again
+            fleurs_row(1, "1-0.wav", "FEMALE"),
+            fleurs_row(2, "2-0.wav", "FEMALE"),  # one recording: take 1 wraps to 0
+            fleurs_row(3, "3-0.wav", "MALE"),
+            fleurs_row(3, "3-1.wav", "MALE"),  # two recordings: take 2 wraps to 0
         ]
     )
-    rows = select_fleurs(tsv, count=4, max_seconds=20)
-    assert [r["gender"] for r in rows] == ["FEMALE", "FEMALE", "MALE", "MALE"]
+    rows = select_fleurs(tsv, count=3, max_seconds=20)
+    assert [(r["file_name"], r["take"]) for r in rows] == [("1-0.wav", 0), ("2-0.wav", 0), ("3-0.wav", 0)]
 
 
 def test_select_fleurs_checks_the_length_of_each_recording_not_of_the_first():
