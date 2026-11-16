@@ -1,0 +1,144 @@
+{{- if not .Values.ollama.modelId }}
+{{- fail "ollama.modelId is required: the ID column of `ollama list` for ollama.model (D25)" }}
+{{- end }}
+{{- $ollamaEnv := list
+  (dict "name" "HOME" "value" "/tmp")
+  (dict "name" "OLLAMA_MODELS" "value" "/models")
+  (dict "name" "OLLAMA_NO_CLOUD" "value" "1")
+  (dict "name" "CHAT_MODEL" "value" .Values.ollama.model)
+  (dict "name" "MODEL_ID" "value" .Values.ollama.modelId) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ollama-scripts
+  labels: {{- include "voice.labels" . | nindent 4 }}
+data:
+  ollama-model.sh: |
+    {{- .Files.Get "files/ollama-model.sh" | nindent 4 }}
+---
+# The chat model into the `ollama-models` volume (D25): the only Ollama pod with egress, the only writer.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-pull-{{ printf "%s %s %s" .Values.images.ollama .Values.ollama.model .Values.ollama.modelId | sha256sum | trunc 8 }}
+  labels:
+    {{- include "voice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama-pull
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels: {{- include "voice.selector" (dict "root" . "component" "ollama-pull") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "voice.podSecurity" . | nindent 6 }}
+      containers:
+        - name: pull
+          image: {{ .Values.images.ollama }}
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "/scripts/ollama-model.sh", "pull"]
+          env: {{- toYaml $ollamaEnv | nindent 12 }}
+          resources: {{- toYaml .Values.ollama.pullResources | nindent 12 }}
+          {{- include "voice.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: ollama-models }
+        - name: scripts
+          configMap: { name: ollama-scripts }
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 16Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  labels:
+    {{- include "voice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # one model in memory at a time; a second pod would need another 4.4 GiB
+  selector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 8 }}
+      annotations:
+        checksum/scripts: {{ .Files.Get "files/ollama-model.sh" | sha256sum | trunc 12 }}
+    spec:
+      # Ollama's image runs as root by default; here it runs as 10001 with a read-only root and models volume (D30).
+      {{- include "voice.podSecurity" . | nindent 6 }}
+      initContainers:
+        - name: check-model
+          image: {{ .Values.images.ollama }}
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "/scripts/ollama-model.sh", "verify"]
+          env:
+            {{- toYaml $ollamaEnv | nindent 12 }}
+            - { name: OLLAMA_NOPRUNE, value: "1" }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          {{- include "voice.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: ollama
+          image: {{ .Values.images.ollama }}
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          ports:
+            - { name: http, containerPort: 11434 }
+          env:
+            {{- toYaml $ollamaEnv | nindent 12 }}
+            - { name: OLLAMA_HOST, value: "0.0.0.0:11434" }
+            - { name: OLLAMA_NOPRUNE, value: "1" } # the volume is read-only here
+            - { name: OLLAMA_KEEP_ALIVE, value: "-1" } # the pod exists to hold this one model (D25)
+            - { name: OLLAMA_MAX_LOADED_MODELS, value: "1" }
+            - { name: OLLAMA_NUM_PARALLEL, value: "1" }
+            - { name: OLLAMA_CONTEXT_LENGTH, value: {{ .Values.ollama.contextLength | quote }} }
+          resources: {{- toYaml .Values.ollama.resources | nindent 12 }}
+          startupProbe: # loads the model: the first call after a start never meets a cold model (D25)
+            exec: { command: ["bash", "/scripts/ollama-model.sh", "load"] }
+            periodSeconds: 10
+            timeoutSeconds: {{ .Values.ollama.loadTimeoutSeconds }}
+            failureThreshold: 3
+          readinessProbe:
+            exec: { command: ["bash", "/scripts/ollama-model.sh", "check"] }
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /api/version, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- include "voice.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: ollama-models, readOnly: true }
+        - name: scripts
+          configMap: { name: ollama-scripts, defaultMode: 0444 }
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 64Mi } # Ollama's key and a few small files
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 4 }}
+  ports:
+    - { name: http, port: 11434, targetPort: http }

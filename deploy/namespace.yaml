@@ -1,0 +1,15 @@
+# The namespace of the voice assistant, with the restricted Pod Security Standard enforced (D30): a pod that runs
+# as root, keeps a capability, can escalate privileges or runs without a seccomp profile is refused at admission.
+# Pinned to the policy version of the cluster's minor release, so a cluster upgrade cannot tighten it unnoticed.
+#   kubectl apply -f deploy/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voice
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.37
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.37
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.37

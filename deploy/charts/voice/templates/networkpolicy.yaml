@@ -1,0 +1,134 @@
+{{- /* D29: everything denied, then only the flows a turn, the two jobs and the tests need. Probes from the
+node's kubelet are always allowed by NetworkPolicy; `kubectl port-forward` enters the pod and is not filtered. */ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# gateway: from the test and load pods (the browser comes through port-forward); to stt, tts and Ollama.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "gateway") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "voice.peer" (dict "root" . "component" "test") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8080 }]
+  egress:
+    - to:
+        - {{- include "voice.peer" (dict "root" . "component" "stt") | nindent 10 }}
+        - {{- include "voice.peer" (dict "root" . "component" "tts") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8000 }]
+    - to:
+        - {{- include "voice.peer" (dict "root" . "component" "ollama") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 11434 }]
+    {{- include "voice.dnsEgress" . | nindent 4 }}
+---
+# stt: from the gateway and the load test; nothing out.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stt
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "stt") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "voice.peer" (dict "root" . "component" "gateway") | nindent 10 }}
+        - {{- include "voice.peer" (dict "root" . "component" "loadtest") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# tts: from the gateway, and from the test and load pods (they have tts speak their question); nothing out.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tts
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "tts") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "voice.peer" (dict "root" . "component" "gateway") | nindent 10 }}
+        - {{- include "voice.peer" (dict "root" . "component" "test") | nindent 10 }}
+        - {{- include "voice.peer" (dict "root" . "component" "loadtest") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# Ollama: from the gateway only; nothing out (no registry, no ollama.com).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ollama
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - {{- include "voice.peer" (dict "root" . "component" "gateway") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 11434 }]
+---
+# The two download jobs: DNS and the model hosts on 443; nothing in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-downloads
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}] }
+      - { key: app.kubernetes.io/component, operator: In, values: [models, ollama-pull] }
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "voice.dnsEgress" . | nindent 4 }}
+    {{- include "voice.modelHostEgress" . | nindent 4 }}
+---
+# helm test: DNS, the gateway (the turn) and tts (it speaks the question first).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "test") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - {{- include "voice.peer" (dict "root" . "component" "gateway") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8080 }]
+    - to:
+        - {{- include "voice.peer" (dict "root" . "component" "tts") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8000 }]
+    {{- include "voice.dnsEgress" . | nindent 4 }}
+---
+# The load test: DNS, stt (the load) and tts (it speaks the question once).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loadtest
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "loadtest") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - {{- include "voice.peer" (dict "root" . "component" "stt") | nindent 10 }}
+        - {{- include "voice.peer" (dict "root" . "component" "tts") | nindent 10 }}
+      ports: [{ protocol: TCP, port: 8000 }]
+    {{- include "voice.dnsEgress" . | nindent 4 }}

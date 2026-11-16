@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Annotated
 
+import httpx2
 import openai
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import FileResponse
@@ -56,10 +57,27 @@ def upstream_error(stage: str, exc: Exception):
     return error(502, f"{stage}_failed", f"the {stage} step failed")
 
 
+def speech_client(base_url: str, timeout: float) -> OpenAI:
+    """A client for one speech service that opens a new connection for every call (D27).
+
+    A kept-alive connection stays with the replica it was opened to: on Kubernetes the Service spreads connections,
+    not requests, so replicas added by the autoscaler would get no work from a busy gateway. A call takes seconds;
+    one more connection inside the cluster costs about a millisecond.
+    """
+    limits = httpx2.Limits(max_connections=None, max_keepalive_connections=0)
+    return OpenAI(
+        base_url=base_url,
+        api_key=SPEECH_KEY,
+        timeout=timeout,
+        max_retries=0,
+        http_client=openai.DefaultHttpxClient(limits=limits),
+    )
+
+
 def create_app(settings: Settings | None = None, assistant: Assistant | None = None):
     settings = settings or load()
-    stt = OpenAI(base_url=settings.stt_url, api_key=SPEECH_KEY, timeout=120.0, max_retries=0)
-    tts = OpenAI(base_url=settings.tts_url, api_key=SPEECH_KEY, timeout=60.0, max_retries=0)
+    stt = speech_client(settings.stt_url, timeout=120.0)
+    tts = speech_client(settings.tts_url, timeout=60.0)
     chat = assistant or Assistant.from_settings(settings)
 
     app = FastAPI(title="voice-gateway", docs_url=None, redoc_url=None)

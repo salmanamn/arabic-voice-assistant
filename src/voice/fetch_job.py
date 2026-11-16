@@ -1,10 +1,15 @@
 """Model-fetch job: put exactly the locked model files into MODELS_DIR, or fail.
 
 python -m voice.fetch_job NAME [NAME ...]
+python -m voice.fetch_job --check NAME [NAME ...]
 
-Runs to completion before the speech services start: a one-shot service in compose, an init container on
-Kubernetes (D20). It is the only component that talks to the model host and the only one that writes the models
-volume; the services mount that volume read-only.
+Runs to completion before the speech services start: a one-shot service in compose, a Job on Kubernetes (D20,
+D24). It is the only component that talks to the model host and the only one that writes the models volume; the
+services mount that volume read-only.
+
+--check compares the volume with the lock and changes nothing: no download, no removal, no hub client. The speech
+services' init containers on Kubernetes run it (read-only volume, no network), so a pod starts only on exactly the
+locked model (D24).
 
 For each NAME the job
 - refuses a model that is not in the lock (it never resolves "the newest revision" and never writes the lock);
@@ -80,10 +85,33 @@ def run(names: list[str], models_dir: Path, lock_path: Path, hub_factory: Callab
     return 1 if failed else 0
 
 
+def check(names: list[str], models_dir: Path, lock_path: Path) -> int:
+    """--check: every named model on the volume is exactly the locked one. Reads only."""
+    if not names:
+        print("FAIL no model named: python -m voice.fetch_job --check NAME [NAME ...]")
+        return 1
+    if not lock_path.is_file():
+        print(f"FAIL {lock_path} does not exist")
+        return 1
+    lock = read_lock(lock_path)
+    failed = 0
+    for name in names:
+        problems = verify(name, models_dir, lock)
+        failed += bool(problems)
+        if problems:
+            print(f"FAIL {'; '.join(problems)}", flush=True)
+        else:
+            print(f"OK   {name}: {len(lock[name]['files'])} files match the lock", flush=True)
+    print(f"{len(names) - failed}/{len(names)} models match {lock_path.name}", flush=True)
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     names = sys.argv[1:] if argv is None else argv
     models_dir = load().models_dir
     lock_path = Path(os.environ.get("MODELS_LOCK", LOCK_FILE))
+    if names[:1] == ["--check"]:
+        return check(names[1:], models_dir, lock_path)
     hub_home = models_dir / ".hf"
     os.environ.setdefault("HF_HOME", str(hub_home))  # before the hub client is imported (HuggingFaceHub())
     try:
