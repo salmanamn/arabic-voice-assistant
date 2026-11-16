@@ -2,13 +2,14 @@
 
 uv run python scripts/speech_set.py own FOLDER            the newest 20 recordings in FOLDER, oldest first = S01..S20
 uv run python scripts/speech_set.py own --id S07 FILE     replace one recording
-uv run python scripts/speech_set.py fleurs [--count 40]   FLEURS Arabic test sentences (downloads about 300 MB once)
+uv run python scripts/speech_set.py fleurs [--count 40]   FLEURS Arabic test sentences (downloads 244 MB once)
 uv run python scripts/speech_set.py status                what is on disk
 """
 
 import argparse
 import shutil
 import sys
+from collections import Counter
 from pathlib import Path
 
 from voice.speechset import (
@@ -62,12 +63,17 @@ def import_own(sources: list[tuple[dict, Path]]) -> None:
     print(f"{len(existing)}/{len(read_prompts(PROMPTS))} recordings in {directory.relative_to(ROOT)}")
 
 
-def build_fleurs(count: int) -> None:
+def build_fleurs(count: int, revision: str | None = None) -> None:
     from huggingface_hub import HfApi, hf_hub_download  # only this step needs the hub client
 
     directory = DATA / "fleurs"
     downloads = ROOT / "data" / "downloads" / "fleurs"
-    revision = HfApi().dataset_info(FLEURS_REPO).sha
+    source = directory / "SOURCE"
+    if revision is None and source.is_file():
+        # A rebuild stays on the dataset revision the set was first built from (and re-uses its downloads).
+        revision = source.read_text(encoding="utf-8").split(" @ ", 1)[1].split(",", 1)[0].strip()
+    if revision is None:
+        revision = HfApi().dataset_info(FLEURS_REPO).sha
     print(f"{FLEURS_REPO} @ {revision[:12]}")
     tsv = hf_hub_download(
         FLEURS_REPO, f"data/{FLEURS_LANG}/test.tsv", repo_type="dataset", revision=revision, local_dir=downloads
@@ -100,13 +106,16 @@ def build_fleurs(count: int) -> None:
             )
         )
     write_manifest(directory, utterances)
-    (directory / "SOURCE").write_text(
+    source.write_text(
         f"{FLEURS_REPO} @ {revision}, data/{FLEURS_LANG} test split, first {count} sentences of at most "
-        f"{MAX_SECONDS:g} s (one recording each). Licence: CC BY 4.0. Conneau et al., FLEURS (2022).\n",
+        f"{MAX_SECONDS:g} s (one recording each, speaker gender balanced). Licence: CC BY 4.0. "
+        "Conneau et al., FLEURS (2022).\n",
         encoding="utf-8",
     )
     total = sum(u.seconds for u in utterances)
-    print(f"{len(utterances)} sentences, {total / 60:.1f} min of audio in {directory.relative_to(ROOT)}")
+    genders = Counter(row["gender"].lower() for row in rows)
+    voices = ", ".join(f"{n} {gender}" for gender, n in sorted(genders.items()))
+    print(f"{len(utterances)} sentences ({voices}), {total / 60:.1f} min of audio in {directory.relative_to(ROOT)}")
 
 
 def status() -> None:
@@ -135,13 +144,14 @@ def main() -> int:
     own.add_argument("--id", help="replace one recording, e.g. S07")
     fleurs = sub.add_parser("fleurs", help="download FLEURS Arabic test sentences")
     fleurs.add_argument("--count", type=int, default=40)
+    fleurs.add_argument("--revision", help="dataset commit; default: the one in data/speech/fleurs/SOURCE, else newest")
     sub.add_parser("status")
     args = parser.parse_args()
 
     if args.command == "status":
         status()
     elif args.command == "fleurs":
-        build_fleurs(args.count)
+        build_fleurs(args.count, args.revision)
     elif args.id:
         prompts = {p["id"]: p for p in read_prompts(PROMPTS)}
         if args.id not in prompts or not args.path.is_file():

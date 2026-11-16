@@ -1,10 +1,106 @@
-# Local lab for the voice assistant. M1: only the LLM runs in a container; speech runs in the uv environment.
-# Do not run together with the ticket-triage lab: both bind 127.0.0.1:11434.
+# Local lab for the voice assistant (M4): the three services, the model-fetch job and Ollama, all as containers.
+#
+#   docker compose up -d --build --wait      build what changed, start in order, return when everything is healthy
+#   docker compose up -d ollama              only the chat model, for running the services with `uv run uvicorn`
+#
+# Every port is bound to 127.0.0.1. Do not run together with the ticket-triage lab: both bind 127.0.0.1:11434.
 name: voice-lab
 
+# What every image of ours runs with (D19): not root, nothing writable but a small /tmp, no Linux capabilities.
+x-hardened: &hardened
+  user: "10001:10001"
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m,mode=1777 # uploads over 1 MB are spooled here; counts towards the memory limit
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
 services:
+  # Runs to completion before the speech services start: downloads the locked models into the volume, or, when
+  # they are already there, only checks them against models.lock.json (D20). The only writer of the volume.
+  models:
+    <<: *hardened
+    build: { context: ., target: models }
+    image: voice-models:local
+    container_name: voice-models
+    restart: "no"
+    command: ["stt-small", "tts-ar-kareem-medium"]
+    environment:
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://huggingface.co}
+    volumes:
+      - models:/models
+    mem_limit: 512m
+    memswap_limit: 512m
+
+  stt:
+    <<: *hardened
+    build: { context: ., target: stt }
+    image: voice-stt:local
+    container_name: voice-stt
+    depends_on:
+      models: { condition: service_completed_successfully }
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      STT_MODEL: stt-small
+      # Physical cores for Whisper (D7). Set here because a container sees every CPU of the machine, whatever
+      # its limits; 6 is the i7-9750H. Another machine: STT_THREADS=<cores> in .env.
+      STT_THREADS: "${STT_THREADS:-6}"
+    volumes:
+      - models:/models:ro
+    mem_limit: 1408m # M3 peak 878 MB x 1.5 (D21)
+    memswap_limit: 1408m # same as the limit: no swap, so too little memory shows as a kill and not as slowness
+    healthcheck: &ready
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s # the model loads before the port opens (D12)
+      start_interval: 2s
+
+  tts:
+    <<: *hardened
+    build: { context: ., target: tts }
+    image: voice-tts:local
+    container_name: voice-tts
+    depends_on:
+      models: { condition: service_completed_successfully }
+    ports:
+      - "127.0.0.1:8002:8000"
+    environment:
+      TTS_VOICE: tts-ar-kareem-medium
+    volumes:
+      - models:/models:ro
+    mem_limit: 1024m # M3 peak 615 MB x 1.5
+    memswap_limit: 1024m
+    healthcheck: *ready
+
+  gateway:
+    <<: *hardened
+    build: { context: ., target: gateway }
+    image: voice-gateway:local
+    container_name: voice-gateway
+    depends_on:
+      stt: { condition: service_healthy }
+      tts: { condition: service_healthy }
+      ollama: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:8080:8080" # the push-to-talk page: http://localhost:8080 (also from Windows)
+    environment:
+      STT_URL: http://stt:8000/v1
+      TTS_URL: http://tts:8000/v1
+      OPENAI_BASE_URL: http://ollama:11434/v1
+      CHAT_MODEL: ${CHAT_MODEL:-phi4-mini:3.8b}
+    mem_limit: 256m # M3 peak 74 MB x 1.5 is 111 MB; 256 MB is the floor for any service
+    memswap_limit: 256m
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/readyz', timeout=3)"]
+      start_period: 20s
+
   ollama:
-    image: ollama/ollama:0.40.15 # same image as ticket-triage-agent (already on disk); CPU only
+    image: ollama/ollama:0.40.15@sha256:0e59999e0e8f9fd4e704bd788a89b7e4cad399367fb1365f8c102ac662288761 # same image as ticket-triage-agent (already on disk); CPU only
     container_name: voice-ollama
     restart: unless-stopped
     ports:
@@ -16,6 +112,8 @@ services:
       OLLAMA_MAX_LOADED_MODELS: "1"
       OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_CONTEXT_LENGTH: "4096" # a turn is a short prompt and a short answer
+    mem_limit: 4480m # phi4-mini 3.11 GB resident (M3) x 1.5; one model loaded at a time
+    memswap_limit: 4480m
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -24,3 +122,4 @@ services:
 
 volumes:
   ollama:
+  models:

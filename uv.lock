@@ -37,49 +37,69 @@ wheels = [
 name = "arabic-voice-assistant"
 version = "0.1.0"
 source = { editable = "." }
-default-groups = ["dev", "models", "stt", "tts"]
-dependencies = [
-    { name = "fastapi" },
-    { name = "openai" },
-    { name = "python-multipart" },
-    { name = "uvicorn" },
-]
+default-groups = ["dev", "gateway", "models", "stt", "tts"]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+gateway = [
+    { name = "fastapi" },
+    { name = "openai" },
+    { name = "python-multipart" },
+    { name = "uvicorn" },
+]
 models = [
     { name = "huggingface-hub" },
 ]
 stt = [
     { name = "av" },
+    { name = "fastapi" },
     { name = "faster-whisper" },
+    { name = "python-multipart" },
+    { name = "uvicorn" },
 ]
 tts = [
+    { name = "fastapi" },
     { name = "piper-tts" },
+    { name = "uvicorn" },
+]
+web = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.163,<1" },
-    { name = "openai", specifier = ">=3.51,<4" },
-    { name = "python-multipart", specifier = ">=0.0.33,<0.1" },
-    { name = "uvicorn", specifier = ">=0.54,<1" },
-]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.2,<10" },
     { name = "ruff", specifier = ">=0.17,<0.18" },
 ]
+gateway = [
+    { name = "fastapi", specifier = ">=0.163,<1" },
+    { name = "openai", specifier = ">=3.51,<4" },
+    { name = "python-multipart", specifier = ">=0.0.33,<0.1" },
+    { name = "uvicorn", specifier = ">=0.54,<1" },
+]
 models = [{ name = "huggingface-hub", specifier = ">=1.0,<2" }]
 stt = [
     { name = "av", specifier = ">=18,<19" },
+    { name = "fastapi", specifier = ">=0.163,<1" },
     { name = "faster-whisper", specifier = "==1.2.1" },
+    { name = "python-multipart", specifier = ">=0.0.33,<0.1" },
+    { name = "uvicorn", specifier = ">=0.54,<1" },
 ]
-tts = [{ name = "piper-tts", specifier = "==1.8.0" }]
+tts = [
+    { name = "fastapi", specifier = ">=0.163,<1" },
+    { name = "piper-tts", specifier = "==1.8.0" },
+    { name = "uvicorn", specifier = ">=0.54,<1" },
+]
+web = [
+    { name = "fastapi", specifier = ">=0.163,<1" },
+    { name = "uvicorn", specifier = ">=0.54,<1" },
+]
 
 [[package]]
 name = "av"

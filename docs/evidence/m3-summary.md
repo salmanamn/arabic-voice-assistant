@@ -5,9 +5,9 @@
 | Model | Set | n | CER | WER | p50 s | p90 s | RTF | Threads |
 |---|---|---|---|---|---|---|---|---|
 | `stt-small` | own | 20 | 10.1% | 20.9% | 1.75 | 1.96 | 0.25 | 6 |
-| `stt-small` | fleurs | 40 | 11.9% | 28.7% | 2.70 | 3.18 | 0.25 | 6 |
+| `stt-small` | fleurs | 40 | 11.9% | 28.7% | 2.82 | 3.42 | 0.27 | 6 |
 | `stt-turbo` | own | 20 | 7.2% | 13.9% | 8.01 | 8.99 | 1.19 | 6 |
-| `stt-turbo` | fleurs | 40 | 8.0% | 15.4% | 9.07 | 9.82 | 0.85 | 6 |
+| `stt-turbo` | fleurs | 40 | 8.0% | 15.4% | 7.92 | 8.61 | 0.75 | 6 |
 
 By style:
 
@@ -40,7 +40,7 @@ Measured 2026-11-16 15:48 UTC: 20/20 turns of the `own` set, `stt-small` (6 thre
 | stt | 2.5 | 2.06 | 2.33 | OK |
 | chat | 3.5 | 1.72 | 3.61 | OVER |
 | tts | 0.8 | 0.26 | 0.74 | OK |
-| other | 0.2 | 0.00 | -0.00 | OK |
+| other | 0.2 | 0.00 | 0.00 | OK |
 | total | 7 | 4.49 | 6.84 | OK |
 
 Peak memory: stt 878 MB, tts 615 MB, gateway 74 MB; Ollama: phi4-mini:3.8b 3.11 GB.

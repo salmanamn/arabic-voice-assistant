@@ -110,7 +110,7 @@ def budget_section(lines: list[str], stt: Choice, chat: Choice) -> str | None:
     ]
     over = []
     for stage, budget in rows:
-        s = turns["stages"][stage]
+        s = {key: max(0.0, value) for key, value in turns["stages"][stage].items()}
         ok = s["p90"] <= budget
         if not ok:
             over.append(f"{stage} p90 {s['p90']:.2f} s > {budget:g} s")

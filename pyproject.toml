@@ -3,22 +3,30 @@ name = "arabic-voice-assistant"
 version = "0.1.0"
 description = "Arabic voice assistant: faster-whisper (speech to text), an LLM, Piper (text to speech)"
 requires-python = ">=3.13,<3.14"
-dependencies = [
-    "openai>=3.51,<4",
+dependencies = []
+
+# One group per image (D9, D19): each image installs its own group and nothing else, so speech to text never gets
+# Piper (GPL, D3), text to speech never gets CTranslate2, and only the model-fetch job gets the hub client.
+# Locally `uv sync` installs every group below.
+[dependency-groups]
+web = [
     "fastapi>=0.163,<1",
     "uvicorn>=0.54,<1",
-    "python-multipart>=0.0.33,<0.1", # file uploads (speech to text, gateway)
 ]
-
-# One group per future service image (M4): the STT image never installs Piper, the TTS image never installs
-# CTranslate2. Locally `uv sync` installs every default group below.
-[dependency-groups]
 stt = [
+    { include-group = "web" },
+    "python-multipart>=0.0.33,<0.1", # the uploaded recording
     "faster-whisper==1.2.1",
     "av>=18,<19", # faster-whisper 1.2.1 calls av.open(metadata_errors=...), which PyAV 19 removed
 ]
 tts = [
+    { include-group = "web" },
     "piper-tts==1.8.0",
+]
+gateway = [
+    { include-group = "web" },
+    "python-multipart>=0.0.33,<0.1", # the uploaded recording
+    "openai>=3.51,<4", # one client for the chat endpoint and both speech services (D10)
 ]
 models = [
     "huggingface-hub>=1.0,<2",
@@ -29,7 +37,7 @@ dev = [
 ]
 
 [tool.uv]
-default-groups = ["stt", "tts", "models", "dev"]
+default-groups = ["stt", "tts", "gateway", "models", "dev"]
 
 [build-system]
 requires = ["hatchling>=1.27"]

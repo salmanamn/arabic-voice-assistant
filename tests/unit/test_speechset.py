@@ -69,6 +69,37 @@ def test_select_fleurs_one_recording_per_sentence_lowest_id_first_and_short_only
     assert len(select_fleurs(TSV, count=1, max_seconds=20)) == 1
 
 
+def fleurs_row(sentence: int, file_name: str, gender: str, samples: int = 96000) -> str:
+    return f"{sentence}\t{file_name}\tجملة {sentence}.\tجملة {sentence}\t8\t{samples}\t{gender}"
+
+
+def test_select_fleurs_balances_speaker_gender():
+    # Every sentence has a female recording first, then a male one: taking the first would give four female voices.
+    tsv = "\n".join(fleurs_row(n, f"{n}{g[0]}.wav", g) for n in (1, 2, 3, 4) for g in ("FEMALE", "MALE"))
+    rows = select_fleurs(tsv, count=4, max_seconds=20)
+    assert [r["file_name"] for r in rows] == ["1F.wav", "2M.wav", "3F.wav", "4M.wav"]
+
+
+def test_select_fleurs_takes_what_a_sentence_has_and_catches_up_later():
+    tsv = "\n".join(
+        [
+            fleurs_row(1, "1F.wav", "FEMALE"),
+            fleurs_row(2, "2F.wav", "FEMALE"),  # no male recording: female again
+            fleurs_row(3, "3F.wav", "FEMALE"),
+            fleurs_row(3, "3M.wav", "MALE"),
+            fleurs_row(4, "4F.wav", "FEMALE"),
+            fleurs_row(4, "4M.wav", "MALE"),  # male is still behind, so male again
+        ]
+    )
+    rows = select_fleurs(tsv, count=4, max_seconds=20)
+    assert [r["gender"] for r in rows] == ["FEMALE", "FEMALE", "MALE", "MALE"]
+
+
+def test_select_fleurs_checks_the_length_of_each_recording_not_of_the_first():
+    tsv = "\n".join([fleurs_row(7, "long.wav", "FEMALE", samples=480000), fleurs_row(7, "short.wav", "MALE")])
+    assert [r["file_name"] for r in select_fleurs(tsv, count=1, max_seconds=20)] == ["short.wav"]
+
+
 def make_tar(path, members: dict[str, bytes], symlink: str | None = None):
     with tarfile.open(path, "w:gz") as tar:
         for name, data in members.items():

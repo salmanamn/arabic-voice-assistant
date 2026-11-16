@@ -3,9 +3,9 @@ there with one line per utterance: id, file (relative to the set directory), ref
 
 - own:    your recordings of the prompts in eval/speech/own.jsonl (the product's case: short questions, one speaker,
           your microphone). Imported from the newest files in a folder, in recording order.
-- fleurs: the first N sentences of Google's FLEURS Arabic (ar_eg) test split, read speech by several speakers,
-          CC BY 4.0. The archive is untrusted input: only the selected .wav members are read, by name, and written
-          under names we choose.
+- fleurs: the first N sentences of Google's FLEURS Arabic (ar_eg) test split: read speech, one recording per
+          sentence, the speakers' gender balanced, CC BY 4.0. The archive is untrusted input: only the selected
+          .wav members are read, by name, and written under names we choose.
 """
 
 import hashlib
@@ -65,26 +65,40 @@ def newest_recordings(folder: Path, count: int) -> list[Path]:
 
 
 def select_fleurs(tsv: str, count: int, max_seconds: float) -> list[dict]:
-    """Rows of a FLEURS split TSV -> the first `count` distinct sentences (lowest sentence id first) whose first
-    recording is at most `max_seconds` long. FLEURS has several speakers per sentence; one recording each keeps the
-    set varied in content. Columns: id, file_name, raw_transcription, transcription, characters, num_samples, gender.
+    """Rows of a FLEURS split TSV -> one recording each of the first `count` distinct sentences (lowest sentence id
+    first) that have a recording of at most `max_seconds`. Columns: id, file_name, raw_transcription, transcription,
+    characters, num_samples, gender.
+
+    FLEURS has up to three recordings per sentence, by different speakers; the TSV names no speaker, only the
+    gender. To get more than one voice into the set, each sentence takes a recording of the gender that has fewer
+    picks so far (FEMALE on a tie), and whatever it has when it has none of that gender. Within a gender the first
+    row in the file wins.
     """
-    first: dict[int, dict] = {}
+    by_sentence: dict[int, list[dict]] = {}
     for line in tsv.splitlines():
         cols = line.split("\t")
         if len(cols) < 7 or not cols[0].isdigit():
             continue
-        sentence = int(cols[0])
-        if sentence not in first:
-            first[sentence] = {
-                "sentence": sentence,
+        seconds = int(cols[5]) / FLEURS_RATE
+        if seconds > max_seconds:
+            continue
+        by_sentence.setdefault(int(cols[0]), []).append(
+            {
+                "sentence": int(cols[0]),
                 "file_name": cols[1],
                 "text": cols[2],
-                "seconds": int(cols[5]) / FLEURS_RATE,
-                "gender": cols[6],
+                "seconds": seconds,
+                "gender": cols[6].strip().upper(),
             }
-    rows = [r for _, r in sorted(first.items()) if r["seconds"] <= max_seconds]
-    return rows[:count]
+        )
+    rows: list[dict] = []
+    picked = {"FEMALE": 0, "MALE": 0}
+    for _, recordings in sorted(by_sentence.items())[:count]:
+        wanted = "MALE" if picked["MALE"] < picked["FEMALE"] else "FEMALE"
+        row = next((r for r in recordings if r["gender"] == wanted), recordings[0])
+        picked[row["gender"]] = picked.get(row["gender"], 0) + 1
+        rows.append(row)
+    return rows
 
 
 def extract_members(archive: Path, wanted: dict[str, Path]) -> set[str]:
