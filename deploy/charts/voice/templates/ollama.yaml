@@ -63,6 +63,7 @@ spec:
   replicas: 1
   strategy:
     type: Recreate # one model in memory at a time; a second pod would need another 4.4 GiB
+  progressDeadlineSeconds: 7200 # the first start waits for the model downloads (Jobs); the default 600 s fails it
   selector:
     matchLabels: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 6 }}
   template:

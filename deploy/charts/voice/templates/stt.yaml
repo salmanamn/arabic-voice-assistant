@@ -9,6 +9,7 @@ spec:
   {{- if not .Values.stt.hpa.enabled }}
   replicas: 1
   {{- end }}
+  progressDeadlineSeconds: 7200 # the first start waits for the model downloads (Jobs); the default 600 s fails it
   selector:
     matchLabels: {{- include "voice.selector" (dict "root" . "component" "stt") | nindent 6 }}
   template:

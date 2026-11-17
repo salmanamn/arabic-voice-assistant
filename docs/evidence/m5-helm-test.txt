@@ -1,0 +1,21 @@
+NAME: voice
+LAST DEPLOYED: Wed Nov 18 01:40:35 2026
+NAMESPACE: voice
+STATUS: deployed
+REVISION: 4
+DESCRIPTION: Upgrade complete
+TEST SUITE:     voice-test-turn
+Last Started:   Wed Nov 18 01:41:19 2026
+Last Completed: Wed Nov 18 01:41:41 2026
+Phase:          Succeeded
+
+POD LOGS: voice-test-turn (turn)
+asked:    ما هي عاصمة مملكة البحرين؟
+heard:    ما هي عاصمة مملكة البحرين؟
+answered: العاصمة مملكة البحرين هي مدينة البحرين.
+timings:  {'stt': 9.99, 'chat': 4.89, 'tts': 0.26, 'total': 15.17}
+PASS status 200
+PASS heard something
+PASS answered something
+PASS answer audio is a WAV
+
