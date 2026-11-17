@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tts
+  labels:
+    {{- include "voice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tts
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 7200 # the first start waits for the model downloads (Jobs); the default 600 s fails it
+  selector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "tts") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "voice.selector" (dict "root" . "component" "tts") | nindent 8 }}
+    spec:
+      {{- include "voice.podSecurity" . | nindent 6 }}
+      terminationGracePeriodSeconds: 45
+      initContainers:
+        {{- include "voice.checkModels" (dict "root" . "model" .Values.tts.voice) | nindent 8 }}
+      containers:
+        - name: tts
+          image: {{ include "voice.image" (dict "root" . "name" "tts") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          env:
+            - { name: TTS_VOICE, value: {{ .Values.tts.voice | quote }} }
+            - { name: MAX_WAITING, value: {{ .Values.tts.maxWaiting | quote }} }
+          resources: {{- toYaml .Values.tts.resources | nindent 12 }}
+          {{- include "voice.probes" (dict "startupSeconds" 120) | nindent 10 }}
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
+          {{- include "voice.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: models, readOnly: true }
+        {{- include "voice.tmpVolume" . | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tts
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "voice.selector" (dict "root" . "component" "tts") | nindent 4 }}
+  ports:
+    - { name: http, port: 8000, targetPort: http }

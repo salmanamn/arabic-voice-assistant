@@ -135,3 +135,45 @@ def test_no_names_and_no_lock_file_fail(job, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "no model named" in out
     assert "missing.json does not exist" in out
+
+
+def test_check_passes_on_exactly_the_locked_files_and_needs_no_hub(job, capsys):
+    run(job, FakeHub(FILES))
+    capsys.readouterr()
+    assert fetch_job.check(["stt-test"], job[0], job[1]) == 0
+    out = capsys.readouterr().out
+    assert "OK   stt-test: 4 files match the lock" in out
+    assert out.strip().endswith("1/1 models match models.lock.json")
+
+
+def test_check_reports_and_changes_nothing(job, capsys):
+    run(job, FakeHub(FILES))
+    directory = job[0] / "stt-test"
+    (directory / "model.bin").write_bytes(b"WEIGHTS")
+    (directory / "extra.txt").write_bytes(b"x")
+    assert fetch_job.check(["stt-test"], job[0], job[1]) == 1
+    out = capsys.readouterr().out
+    assert "model.bin differs from the lock" in out
+    assert "extra.txt is not in the lock" in out
+    assert (directory / "model.bin").read_bytes() == b"WEIGHTS"  # nothing replaced
+    assert (directory / "extra.txt").exists()  # nothing removed
+
+
+def test_check_on_an_empty_volume_fails(job, capsys):
+    assert fetch_job.check(["stt-test"], job[0], job[1]) == 1
+    assert "does not exist" in capsys.readouterr().out
+    assert not job[0].exists()  # not even the models directory is created
+
+
+def test_main_check_flag_never_creates_a_hub_client(job, monkeypatch, capsys):
+    run(job, FakeHub(FILES))
+    monkeypatch.setenv("MODELS_DIR", str(job[0]))
+    monkeypatch.setenv("MODELS_LOCK", str(job[1]))
+
+    class NoHub:
+        def __init__(self):
+            raise AssertionError("--check must not create a hub client")
+
+    monkeypatch.setattr(fetch_job, "HuggingFaceHub", NoHub)
+    assert fetch_job.main(["--check", "stt-test"]) == 0
+    assert fetch_job.main(["--check"]) == 1

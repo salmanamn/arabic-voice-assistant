@@ -1,0 +1,8 @@
+apiVersion: v2
+name: voice
+description: Arabic voice assistant - speech to text, text to speech, gateway and a local chat model (Ollama)
+type: application
+version: 0.1.0
+appVersion: "m5"
+kubeVersion: ">=1.34.0-0" # preStop sleep action (GA in 1.34)
+home: https://github.com/salmanamn/arabic-voice-assistant

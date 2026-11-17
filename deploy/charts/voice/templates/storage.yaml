@@ -1,0 +1,27 @@
+# Two volumes on the node's disk. ReadWriteOnce: the writer (a job) and the readers run on the same minikube node.
+# On AKS (M7) a disk attaches to one node at a time: one node pool, or Azure Files for ReadOnlyMany.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: models
+  labels: {{- include "voice.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep # `helm uninstall` leaves the downloaded models; delete the PVC by hand
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.models.storage }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  labels: {{- include "voice.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.ollama.storage }}

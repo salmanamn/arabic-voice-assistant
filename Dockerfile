@@ -61,6 +61,9 @@ WORKDIR /app
 USER 10001:10001
 LABEL org.opencontainers.image.source="https://github.com/salmanamn/arabic-voice-assistant"
 
+# Stop (D31): on SIGTERM uvicorn stops accepting, finishes the calls in progress and the ones waiting behind them
+# (D11), then exits; after 30 s it gives up on what is left. Compose and Kubernetes give 45 s before SIGKILL.
+
 # ---- speech to text ------------------------------------------------------------------------------------------
 FROM runtime AS stt
 COPY --from=venv-stt /app/.venv /app/.venv
@@ -69,7 +72,8 @@ ENV HF_HUB_OFFLINE=1
 EXPOSE 8000
 LABEL org.opencontainers.image.title="voice-stt" \
     org.opencontainers.image.description="Speech to text: OpenAI transcription route served by faster-whisper"
-CMD ["uvicorn", "--factory", "voice.services.stt_app:create_app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "--factory", "voice.services.stt_app:create_app", "--host", "0.0.0.0", "--port", "8000", \
+    "--timeout-graceful-shutdown", "30"]
 
 # ---- text to speech: the only image with Piper (GPL-3.0-or-later, D3) ----------------------------------------
 FROM runtime AS tts
@@ -78,7 +82,8 @@ EXPOSE 8000
 LABEL org.opencontainers.image.title="voice-tts" \
     org.opencontainers.image.description="Text to speech: OpenAI speech route served by Piper" \
     org.opencontainers.image.licenses="GPL-3.0-or-later"
-CMD ["uvicorn", "--factory", "voice.services.tts_app:create_app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "--factory", "voice.services.tts_app:create_app", "--host", "0.0.0.0", "--port", "8000", \
+    "--timeout-graceful-shutdown", "30"]
 
 # ---- gateway -------------------------------------------------------------------------------------------------
 FROM runtime AS gateway
@@ -86,7 +91,8 @@ COPY --from=venv-gateway /app/.venv /app/.venv
 EXPOSE 8080
 LABEL org.opencontainers.image.title="voice-gateway" \
     org.opencontainers.image.description="Gateway: one assistant turn over HTTP and the push-to-talk page"
-CMD ["uvicorn", "--factory", "voice.services.gateway_app:create_app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "--factory", "voice.services.gateway_app:create_app", "--host", "0.0.0.0", "--port", "8080", \
+    "--timeout-graceful-shutdown", "30"]
 
 # ---- model-fetch job: the lock travels inside the image, the models never do (D4, D20) -----------------------
 FROM runtime AS models

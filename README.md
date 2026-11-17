@@ -2,7 +2,7 @@
 
 A voice assistant that listens and answers in Arabic, built from open components: **faster-whisper** turns speech into text, an LLM writes a short answer, **Piper** speaks it. It runs first on a laptop, then as services on Kubernetes (minikube with Helm), then on AKS.
 
-**Status: M4 — four container images and one `docker compose up`.** Not on Kubernetes yet.
+**Status: M5 — the same four images as a Helm chart on minikube**: probes, requests and limits, an autoscaler for speech to text, the restricted Pod Security Standard and default-deny network policies. Not on AKS yet.
 
 ```
 browser (push to talk) ──POST /api/turn──▶ gateway :8080 ──▶ stt      POST /v1/audio/transcriptions  (faster-whisper)
@@ -25,8 +25,11 @@ Needs Docker with Compose, and on first use about 550 MB of model downloads, 2.5
 
     docker compose build
     docker compose run --rm models
-    docker compose up -d --wait
+    docker compose up -d ollama
     docker exec voice-ollama ollama pull phi4-mini:3.8b
+    docker compose up -d --wait
+
+`up --wait` returns once Ollama has the chat model in memory (its health check loads it, a few minutes on a laptop CPU).
 
 Open http://localhost:8080, hold the button (or the space bar), ask a question in Arabic, let go.
 
@@ -46,6 +49,19 @@ Our images run as a non-root user on a read-only filesystem and contain no model
 
 Base images are pinned by digest: `scripts/pin_images.py` moves them, `scripts/check_images.py` checks what was built.
 
+## Run it on minikube
+
+Needs minikube with Calico and metrics-server, kubectl and Helm 4; the images built by `docker compose build`; compose stopped (same memory, same port 8080). The values in `deploy/charts/voice/values.yaml` are for a 12-CPU, 10 GiB minikube; `ollama.modelId` pins the chat model (the ID column of `ollama list`).
+
+    minikube start --driver=docker --container-runtime=containerd --cpus=12 --memory=10g --cni=calico --addons=metrics-server
+    for i in stt tts gateway models; do minikube image load voice-$i:local; done
+    kubectl apply -f deploy/namespace.yaml
+    helm install voice deploy/charts/voice -n voice --wait --timeout 30m
+    helm test voice -n voice --logs
+    kubectl -n voice port-forward svc/gateway 8080:8080
+
+Then http://localhost:8080 as above. The first install downloads both models into the cluster (a Job each). What the chart adds to compose: a startup, readiness and liveness probe per service, CPU and memory requests, an autoscaler for `stt` (1–2 replicas), every pod non-root on a read-only filesystem under the restricted Pod Security Standard, and network policies that deny everything a turn does not need (`scripts/check_netpol.py` checks them from inside the pods).
+
 ## Develop without rebuilding images
 
     uv sync
@@ -63,5 +79,6 @@ Then one terminal each (stop the compose services first: same ports):
 - `scripts/roundtrip.py`: eight sentences spoken by Piper and transcribed by faster-whisper. A smoke test of the pipeline and its speed, not of recognition (synthetic speech, one voice).
 - **Real speech (M3):** 20 recorded questions (14 Modern Standard Arabic, 6 Gulf dialect) and 40 sentences of FLEURS Arabic (CC BY 4.0), Whisper small against large-v3-turbo; small chat models on 24 Arabic questions with known answers; and a time budget per stage, measured through the services. The comparison and the choices: [docs/evidence/m3-summary.md](docs/evidence/m3-summary.md). Audio is not in the repository; `scripts/speech_set.py` rebuilds the sets.
 - **Containers (M4):** the same turns through compose against the budget ([docs/evidence/m4-turns.md](docs/evidence/m4-turns.md)), what was built ([docs/evidence/m4-images.md](docs/evidence/m4-images.md)) and the image scans (`docs/evidence/m4-trivy-*.txt`).
+- **Kubernetes (M5):** a turn on minikube against the budget and against compose ([docs/evidence/m5-turns.md](docs/evidence/m5-turns.md)), the network policies flow by flow ([docs/evidence/m5-netpol.md](docs/evidence/m5-netpol.md)), the autoscaler under load ([docs/evidence/m5-hpa.md](docs/evidence/m5-hpa.md)), `helm test` ([docs/evidence/m5-helm-test.txt](docs/evidence/m5-helm-test.txt)), Ollama's cold load ([docs/evidence/m5-ollama-load.md](docs/evidence/m5-ollama-load.md)) and how the services stop ([docs/evidence/m5-stop.md](docs/evidence/m5-stop.md)).
 
 Design choices and their reasons: [docs/decisions.md](docs/decisions.md).

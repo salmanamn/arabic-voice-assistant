@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stt
+  labels:
+    {{- include "voice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: stt
+spec:
+  {{- if not .Values.stt.hpa.enabled }}
+  replicas: 1
+  {{- end }}
+  progressDeadlineSeconds: 7200 # the first start waits for the model downloads (Jobs); the default 600 s fails it
+  selector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "stt") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "voice.selector" (dict "root" . "component" "stt") | nindent 8 }}
+    spec:
+      {{- include "voice.podSecurity" . | nindent 6 }}
+      terminationGracePeriodSeconds: 45 # 5 s preStop + up to 30 s of uvicorn draining (D31)
+      initContainers:
+        {{- include "voice.checkModels" (dict "root" . "model" .Values.stt.model) | nindent 8 }}
+      containers:
+        - name: stt
+          image: {{ include "voice.image" (dict "root" . "name" "stt") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          env:
+            - { name: STT_MODEL, value: {{ .Values.stt.model | quote }} }
+            - { name: MAX_WAITING, value: {{ .Values.stt.maxWaiting | quote }} }
+            - name: STT_THREADS # the CPU request, rounded up to whole CPUs (D7, D26)
+              valueFrom:
+                resourceFieldRef: { containerName: stt, resource: requests.cpu, divisor: "1" }
+          resources: {{- toYaml .Values.stt.resources | nindent 12 }}
+          {{- include "voice.probes" (dict "startupSeconds" 180) | nindent 10 }}
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 } # the Service stops sending before uvicorn stops accepting (D31)
+          {{- include "voice.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: models, readOnly: true }
+        {{- include "voice.tmpVolume" . | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stt
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "voice.selector" (dict "root" . "component" "stt") | nindent 4 }}
+  ports:
+    - { name: http, port: 8000, targetPort: http }
+{{- if .Values.stt.hpa.enabled }}
+---
+# Scales stt on CPU (D28). One call at a time per replica (D11) with STT_THREADS = the CPU request: a busy
+# replica uses about 100 % of its request, an idle one about 0, so utilisation is the share of time it is busy.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: stt
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: stt }
+  minReplicas: {{ .Values.stt.hpa.minReplicas }}
+  maxReplicas: {{ .Values.stt.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.stt.hpa.cpuUtilization }} }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.stt.hpa.scaleDownSeconds }}
+{{- end }}

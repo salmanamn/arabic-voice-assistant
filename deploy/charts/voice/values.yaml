@@ -1,0 +1,85 @@
+# Values for minikube on the laptop (i7-9750H: 6 cores, 12 CPUs; minikube with 12 CPUs and 10 GiB, M5 runbook).
+# One release per namespace: the Services have fixed names (stt, tts, gateway, ollama).
+
+images:
+  registry: "" # empty: images loaded into minikube from Docker Desktop (`minikube image load`); M6: ghcr.io/salmanamn
+  tag: local
+  pullPolicy: IfNotPresent # never Always for :local - there is no registry to pull from
+  ollama: ollama/ollama:0.40.15@sha256:0e59999e0e8f9fd4e704bd788a89b7e4cad399367fb1365f8c102ac662288761
+
+# Speech models (D20, D24): one Job downloads and checks them into the volume (the only writer); the stt and tts
+# pods check them again, read-only and offline, in an init container before they start.
+models:
+  names: [stt-small, tts-ar-kareem-medium]
+  hfEndpoint: https://huggingface.co
+  storage: 1Gi # stt-small 486 MB + voice 63 MB + the hub client's temporary cache
+  resources: # fetch job: compose limit 512 MB (D21)
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 512Mi }
+
+# Requests: memory = the highest peak seen (M3/M4), rounded up to 128 MiB; CPU = what the service works with.
+# Limits: memory = peak x 1.5, as in compose (D21); no CPU limits (D26).
+stt:
+  model: stt-small
+  # STT_THREADS is the CPU request, rounded up (D7, D26): 3 threads per replica, two replicas use the 6 cores.
+  resources:
+    requests: { cpu: "3", memory: 1408Mi } # peak 1328 MB (M4, browser turns)
+    limits: { memory: 2048Mi }
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 2 # two replicas x 2 GiB is what the 10 GiB node has room for next to Ollama
+    cpuUtilization: 60 # % of the CPU request; a busy replica is at about 100 % (one call at a time, D11, D28)
+    scaleDownSeconds: 120
+  maxWaiting: 4
+
+tts:
+  voice: tts-ar-kareem-medium
+  resources:
+    requests: { cpu: "1", memory: 640Mi } # peak 615 MB (M3)
+    limits: { memory: 1024Mi }
+  maxWaiting: 4
+
+gateway:
+  resources:
+    requests: { cpu: 250m, memory: 128Mi } # peak 74 MB (M3)
+    limits: { memory: 256Mi } # the floor for any service (D21)
+
+ollama:
+  model: phi4-mini:3.8b
+  modelId: "78fad5d182a7" # required: the ID column of `ollama list` for that model; the pull job refuses any other (D25)
+  storage: 6Gi # phi4-mini is 2.5 GB
+  contextLength: 4096
+  loadTimeoutSeconds: 300 # cold load measured at 2 min 36 s under compose (M4)
+  resources:
+    requests: { cpu: "2", memory: 3072Mi } # phi4-mini resident 3.11 GB (M3)
+    limits: { memory: 4480Mi }
+  pullResources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+network:
+  # Egress of the two jobs that download models. NetworkPolicy has no host names: public addresses on 443,
+  # nothing inside the cluster or the private ranges (D29).
+  modelHosts:
+    ports: [443]
+    cidrs:
+      - cidr: 0.0.0.0/0
+        except:
+          [
+            10.0.0.0/8,
+            172.16.0.0/12,
+            192.168.0.0/16,
+            100.64.0.0/10,
+            169.254.0.0/16,
+            127.0.0.0/8,
+          ]
+  dns:
+    namespace: kube-system
+    podLabels: { k8s-app: kube-dns }
+
+# In-cluster load on stt to watch the autoscaler (M5 Step 4); off by default.
+loadtest:
+  enabled: false
+  workers: 4
+  seconds: 240

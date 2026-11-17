@@ -70,9 +70,18 @@ def lab(serve):
     """Starts the services; returns a function that builds a gateway client with optional overrides."""
     recogniser, synthesiser, calls = Recogniser(), Synthesiser(), []
     base = load({"MAX_UPLOAD_BYTES": "1000", "MAX_SPEECH_CHARS": "40"})
+    clients: dict[str, list] = {"stt": [], "tts": []}
+    stt_app, tts_app = create_stt(base, lambda _: recogniser), create_tts(base, lambda _: synthesiser)
+    for name, app in (("stt", stt_app), ("tts", tts_app)):
+
+        @app.middleware("http")
+        async def record_client(request: Request, call_next, seen=clients[name]):
+            seen.append(request.client.port)  # the gateway's end of the connection: a new port is a new connection
+            return await call_next(request)
+
     urls = {
-        "STT_URL": serve(create_stt(base, lambda _: recogniser)) + "/v1",
-        "TTS_URL": serve(create_tts(base, lambda _: synthesiser)) + "/v1",
+        "STT_URL": serve(stt_app) + "/v1",
+        "TTS_URL": serve(tts_app) + "/v1",
         "OPENAI_BASE_URL": serve(chat_app(calls)) + "/v1",
     }
 
@@ -81,6 +90,7 @@ def lab(serve):
         return TestClient(create_app(load(env)))
 
     gateway.recogniser, gateway.synthesiser, gateway.calls, gateway.urls = recogniser, synthesiser, calls, urls
+    gateway.clients = clients
     return gateway
 
 
@@ -100,6 +110,17 @@ def test_a_full_turn(lab):
     assert lab.synthesiser.spoken == ["عاصمة مملكة البحرين هي المنامة."]
     (call,) = lab.calls
     assert call["messages"][-1] == {"role": "user", "content": QUESTION}
+
+
+def test_every_speech_call_is_a_new_connection(lab):
+    # replicas behind a Service only share the work if connections are not kept alive (D27)
+    client = lab()
+    for _ in range(3):
+        assert turn(client).status_code == 200
+    for name in ("stt", "tts"):
+        ports = lab.clients[name]
+        assert len(ports) == 3
+        assert len(set(ports)) == 3, f"{name}: a connection was reused"
 
 
 def test_no_speech_means_no_chat_and_no_audio(lab):

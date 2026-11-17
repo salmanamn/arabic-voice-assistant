@@ -1,0 +1,35 @@
+# The speech models into the `models` volume (D20, D24). A Job and not an init container: only this pod may reach
+# the model host (D29), and only this pod writes the volume. The name carries a hash of the image and the model
+# list, so a change creates a new Job (a Job's pod template cannot be changed in place).
+{{- $spec := printf "%s %s %v" (include "voice.image" (dict "root" . "name" "models")) .Values.models.hfEndpoint .Values.models.names }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: models-{{ $spec | sha256sum | trunc 8 }}
+  labels:
+    {{- include "voice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: models
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels: {{- include "voice.selector" (dict "root" . "component" "models") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "voice.podSecurity" . | nindent 6 }}
+      containers:
+        - name: fetch
+          image: {{ include "voice.image" (dict "root" . "name" "models") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: {{- toYaml .Values.models.names | nindent 12 }}
+          env:
+            - { name: HF_ENDPOINT, value: {{ .Values.models.hfEndpoint | quote }} }
+          resources: {{- toYaml .Values.models.resources | nindent 12 }}
+          {{- include "voice.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: models }
+        {{- include "voice.tmpVolume" . | nindent 8 }}

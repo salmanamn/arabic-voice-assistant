@@ -2,6 +2,8 @@
 
 uv run python scripts/measure_turns.py [--set own] [--url http://127.0.0.1:8080]
 uv run python scripts/measure_turns.py --compose --out out/m4/turns-compose.json --evidence docs/evidence/m4-turns.md
+uv run python scripts/measure_turns.py --kube voice --out out/m5/turns-kube.json --baseline out/m4/turns-compose.json \
+    --evidence docs/evidence/m5-turns.md
 
 Needs the three services and Ollama running. One warm-up turn is not counted. Reports p50/p90 per stage
 (stt, chat, tts, other = total minus the three) and the peak memory of each service, and writes a JSON summary
@@ -9,7 +11,9 @@ Needs the three services and Ollama running. One warm-up turn is not counted. Re
 
 Without --compose the services are processes on this machine (M2/M3): models and threads come from this shell's
 settings, peak memory from /proc. With --compose they are the containers of docker-compose.yml: models, threads
-and peak memory are asked from inside each container, next to its memory limit. --evidence writes a Markdown
+and peak memory are asked from inside each container, next to its memory limit. With --kube NAMESPACE they are the
+pods of the Helm chart (M5), reached through `kubectl port-forward svc/gateway 8080:8080`, and asked the same way
+with `kubectl exec` (one pod per Deployment). --evidence writes a Markdown
 comparison with the time budget (D18) and with an earlier measurement (--baseline, default out/m3/turns.json).
 """
 
@@ -76,18 +80,50 @@ print(json.dumps({"peak_mb": peak_kb / 1024, "limit_mb": limit_mb, "stt_model": 
 """
 
 
-def probe_containers() -> dict[str, dict]:
+def exec_command(name: str, namespace: str | None) -> list[str]:
+    """The command that runs a program inside one service: its compose container, or its Deployment's pod."""
+    if namespace:
+        return ["kubectl", "-n", namespace, "exec", f"deploy/{name}", "-c", name, "--"]
+    return ["docker", "exec", CONTAINERS[name]]
+
+
+def probe_containers(namespace: str | None = None) -> dict[str, dict]:
     """What each service container reports about itself; {} for a container that is not running."""
     found = {}
-    for name, container in CONTAINERS.items():
+    for name in CONTAINERS:
         result = subprocess.run(  # noqa: S603 (fixed command, fixed container names)
-            ["docker", "exec", container, "python", "-c", PROBE],  # noqa: S607 (docker from PATH)
+            [*exec_command(name, namespace), "python", "-c", PROBE],
             capture_output=True,
             text=True,
             check=False,
         )
         found[name] = json.loads(result.stdout) if result.returncode == 0 else {}
     return found
+
+
+def kube_replicas(namespace: str) -> int:
+    result = subprocess.run(  # noqa: S603
+        ["kubectl", "-n", namespace, "get", "deploy", "stt", "-o", "jsonpath={.status.readyReplicas}"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return int(result.stdout or 0)
+
+
+def kube_ollama_models(namespace: str) -> list[dict]:
+    """Ollama's loaded models, asked from the gateway pod (the only pod the policies let reach Ollama, D29)."""
+    ask = (
+        "import json, urllib.request as u; "
+        "print(json.dumps(json.load(u.urlopen('http://ollama:11434/api/ps', timeout=5))['models']))"
+    )
+    result = subprocess.run(  # noqa: S603
+        [*exec_command("gateway", namespace), "python", "-c", ask], capture_output=True, text=True, check=False
+    )
+    try:
+        return [{"name": m["name"], "gb": round(m["size"] / 1e9, 2)} for m in json.loads(result.stdout)]
+    except (ValueError, KeyError):
+        return []
 
 
 def ollama_models(base_url: str) -> list[dict]:
@@ -107,7 +143,7 @@ def shown(path: Path) -> str:
 
 def write_evidence(path: Path, summary: dict, baseline: dict | None, baseline_name: str) -> None:
     """Markdown: this measurement against the time budget (D18) and, when there is one, an earlier measurement."""
-    where = "compose containers" if summary["compose"] else "processes on the laptop"
+    where = summary.get("where") or ("compose containers" if summary["compose"] else "processes on the laptop")
     lines = [
         f"# One turn through the services ({where})",
         "",
@@ -157,6 +193,7 @@ def main() -> int:
     parser.add_argument("--set", default="own", choices=["own", "fleurs"])
     parser.add_argument("--url", default="http://127.0.0.1:8080")
     parser.add_argument("--compose", action="store_true", help="the services are the docker-compose.yml containers")
+    parser.add_argument("--kube", metavar="NAMESPACE", help="the services are the Helm chart's pods in NAMESPACE")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="JSON summary (default out/m3/turns.json)")
     parser.add_argument("--evidence", type=Path, help="also write a Markdown comparison to this file")
     parser.add_argument("--baseline", type=Path, default=DEFAULT_OUT, help="earlier JSON summary to compare with")
@@ -200,8 +237,8 @@ def main() -> int:
     for stage in ("stt", "chat", "tts", "other", "total"):
         values = [r["timings"].get(stage, 0.0) for r in ok]
         stages[stage] = {"p50": percentile(values, 0.5), "p90": percentile(values, 0.9), "max": max(values or [0])}
-    if args.compose:
-        probes = probe_containers()
+    if args.compose or args.kube:
+        probes = probe_containers(args.kube)
         memory = {name: probes[name].get("peak_mb") for name in SERVICES}
         limits = {name: probes[name].get("limit_mb") for name in SERVICES}
         stt_model = probes["stt"].get("stt_model", "?")
@@ -210,11 +247,16 @@ def main() -> int:
     else:
         memory, limits = peak_memory_mb(), dict.fromkeys(SERVICES)
         stt_model, stt_threads, chat_model = settings.stt_model, settings.stt_threads, settings.chat_model
-    models = ollama_models(settings.openai_base_url)
+    models = kube_ollama_models(args.kube) if args.kube else ollama_models(settings.openai_base_url)
+    if args.kube:
+        where = f"minikube pods, namespace {args.kube}, {kube_replicas(args.kube)} stt replica(s)"
+    else:
+        where = "compose containers" if args.compose else "processes on the laptop"
     summary = {
         "date": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         "set": args.set,
         "compose": args.compose,
+        "where": where,
         "stt_model": stt_model,
         "stt_threads": stt_threads,
         "chat_model": chat_model,
