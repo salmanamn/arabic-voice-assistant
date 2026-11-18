@@ -24,7 +24,7 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "voice.podSecurity" -}}
 automountServiceAccountToken: false
 securityContext:
-  runAsNonRoot: true
+  runAsNonRoot: false
   runAsUser: 10001
   runAsGroup: 10001
   fsGroup: 10001
