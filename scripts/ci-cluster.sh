@@ -20,6 +20,7 @@ case ${1:-} in
       sleep 2
     done
     kubectl get nodes
+    for _ in $(seq 60); do kubectl -n kube-system get deploy coredns >/dev/null 2>&1 && break; sleep 2; done # k3s creates it a few s after the node is Ready
     kubectl -n kube-system wait --for=condition=Available deploy/coredns --timeout=5m
     ;;
   load)
