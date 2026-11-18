@@ -12,6 +12,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.models.storage }}
+{{- if not .Values.ollama.fake }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -25,3 +26,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.ollama.storage }}
+{{- end }}

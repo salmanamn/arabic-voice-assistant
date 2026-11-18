@@ -1,0 +1,12 @@
+# GitHub Actions versions, weekly, grouped into one PR. Base images and Ollama are not here: Dependabot reads FROM
+# lines, not the Dockerfile's ARG defaults, so the weekly `pins` job in ci.yml checks them instead (D36). Python
+# packages are moved by hand (`uv lock --upgrade-package`), with the tests and a scan.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -1,0 +1,27 @@
+# The chart in CI (D34): k3s on a GitHub runner (4 CPUs, 16 GB), images built by the same workflow and imported
+# into k3s, Whisper tiny instead of small, and a fixed-answer stand-in instead of Ollama. Everything else (probes,
+# Pod Security, network policies, the models Job and its check) is the chart as it runs on minikube.
+#   helm install voice deploy/charts/voice -n voice -f deploy/ci-values.yaml
+images:
+  tag: ci
+models:
+  names: [stt-tiny, tts-ar-kareem-medium]
+  storage: 512Mi
+stt:
+  model: stt-tiny
+  resources:
+    requests: { cpu: "1", memory: 512Mi }
+    limits: { memory: 1Gi }
+  hpa:
+    enabled: false
+tts:
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { memory: 1Gi }
+gateway:
+  resources:
+    requests: { cpu: 100m, memory: 64Mi }
+    limits: { memory: 256Mi }
+ollama:
+  fake: true
+  modelId: ""

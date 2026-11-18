@@ -19,6 +19,18 @@ request() { # METHOD PATH BODY -> the raw response; one HTTP/1.0 request, so the
   cat <&3
 }
 
+progress() { # ollama's redrawn progress bar -> one line per layer per 10 %, other lines once each
+  tr '\r' '\n' | sed -u 's/\x1b\[[0-9;?]*[A-Za-z]//g' | awk '
+    match($0, /pulling [0-9a-f]+: +[0-9]+%/) {
+      split(substr($0, RSTART, RLENGTH), f, /[: %]+/)
+      if (!(f[2] in shown) || f[3] >= shown[f[2]] + 10 || (f[3] == 100 && shown[f[2]] < 100)) {
+        shown[f[2]] = f[3]; print; fflush()
+      }
+      next
+    }
+    NF && $0 != last { print; fflush(); last = $0 }'
+}
+
 model_id() { # the 12-character id `ollama list` shows for CHAT_MODEL, or nothing
   ollama list 2>/dev/null | awk -v m="$model" '$1 == m { print $2 }'
 }
@@ -42,7 +54,7 @@ case "${1:-}" in
     start_server
     if [[ -z $(model_id) ]]; then
       echo "pulling $model"
-      ollama pull "$model" 2>&1 | tr '\r' '\n' | grep -v '^pulling [0-9a-f]*: *[0-9]*%' || true
+      ollama pull "$model" 2>&1 | progress || true
     fi
     got=$(model_id)
     if [[ $got != "$MODEL_ID" ]]; then

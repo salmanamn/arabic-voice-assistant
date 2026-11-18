@@ -3,8 +3,11 @@
 uv run python scripts/pin_images.py            ask the registries for each tag's digest and write tag@sha256:... back
 uv run python scripts/pin_images.py --check    no network: exit 1 if an image is not pinned
 
-Two kinds of line are handled: `ARG <NAME>_IMAGE=<image>` in Dockerfile (the base images) and `image: <image>`
-in docker-compose.yml. Images tagged `:local` are the ones this repository builds; they are left alone.
+Three kinds of line are handled: `ARG <NAME>_IMAGE=<image>` in Dockerfile (the base images), `image: <image>` in
+docker-compose.yml, and the `ollama:` image in the chart's values.yaml. Images tagged `:local` are the ones this
+repository builds; they are left alone. --check also fails when compose and the chart pin different Ollama images.
+CI runs the resolving mode weekly and fails when a tag has moved (D36): the stand-in for Dependabot, which does not
+read `ARG` defaults.
 Run it again to move to the newest digest of the same tags, then rebuild and scan before committing.
 """
 
@@ -18,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = {
     "Dockerfile": re.compile(r"^(ARG \w+_IMAGE=)(\S+)$", re.MULTILINE),
     "docker-compose.yml": re.compile(r"^(\s*image: )(\S+)", re.MULTILINE),
+    "deploy/charts/voice/values.yaml": re.compile(r"^(  ollama: )(\S+)$", re.MULTILINE),
 }
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -49,6 +53,7 @@ def main() -> int:
     args = parser.parse_args()
 
     unpinned = 0
+    seen: dict[str, set[str]] = {}
     for name, pattern in FILES.items():
         path = ROOT / name
         text = path.read_text(encoding="utf-8")
@@ -56,6 +61,7 @@ def main() -> int:
             tagged, old = split(match.group(2))
             if tagged.endswith(":local"):
                 continue
+            seen.setdefault(tagged.split(":")[0], set()).add(match.group(2))
             if args.check:
                 state = "pinned" if DIGEST.match(old) else "NOT PINNED"
                 unpinned += state != "pinned"
@@ -69,7 +75,10 @@ def main() -> int:
             path.write_text(text, encoding="utf-8")
     if unpinned:
         print(f"{unpinned} image(s) not pinned: run scripts/pin_images.py")
-    return 1 if unpinned else 0
+    differ = {repo: refs for repo, refs in seen.items() if len(refs) > 1}
+    for repo, refs in differ.items():
+        print(f"DIFFERENT  {repo} is pinned to {len(refs)} different references: {', '.join(sorted(refs))}")
+    return 1 if unpinned or (args.check and differ) else 0
 
 
 if __name__ == "__main__":

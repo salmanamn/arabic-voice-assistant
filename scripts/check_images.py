@@ -1,8 +1,8 @@
 """Check the four built images against the rules they were designed to (D19, D20), and record what was built.
 
-uv run python scripts/check_images.py [--evidence docs/evidence/m4-images.md]
+uv run python scripts/check_images.py [--tag local] [--evidence docs/evidence/m4-images.md]
 
-Per image (voice-stt, voice-tts, voice-gateway, voice-models, tag :local):
+Per image (voice-stt, voice-tts, voice-gateway, voice-models, tag :local unless --tag; CI builds :ci):
 - the configured user is 10001:10001, and a process started in the image really runs with that uid;
 - no model file inside: /models is empty and no file anywhere has the name and size of a file in models.lock.json;
 - only its own packages: Piper only in tts (GPL, D3), CTranslate2/faster-whisper only in stt, the OpenAI client
@@ -69,6 +69,7 @@ def docker(*args: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--evidence", type=Path, help="write image ids, sizes and package counts to this file")
+    parser.add_argument("--tag", default="local", help="tag of the four images (default local; CI builds ci)")
     args = parser.parse_args()
 
     lock = json.loads((ROOT / "models.lock.json").read_text(encoding="utf-8"))
@@ -82,7 +83,7 @@ def main() -> int:
         print(f"{'PASS' if ok else 'FAIL'} {image:8} {what}")
 
     for image in IMAGES:
-        tag = f"voice-{image}:local"
+        tag = f"voice-{image}:{args.tag}"
         config = json.loads(docker("image", "inspect", tag))[0]
         inside = json.loads(docker("run", "--rm", "--network", "none", "--entrypoint", "python", tag, "-c", PROBE))
         packages = set(inside["packages"])

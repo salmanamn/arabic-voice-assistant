@@ -46,6 +46,7 @@ gateway:
     limits: { memory: 256Mi } # the floor for any service (D21)
 
 ollama:
+  fake: false # true: a fixed-answer stand-in instead of Ollama, for the cluster test in CI (D34)
   model: phi4-mini:3.8b
   modelId: "78fad5d182a7" # required: the ID column of `ollama list` for that model; the pull job refuses any other (D25)
   storage: 6Gi # phi4-mini is 2.5 GB
