@@ -1,3 +1,4 @@
+{{- if not .Values.ollama.fake }}
 {{- if not .Values.ollama.modelId }}
 {{- fail "ollama.modelId is required: the ID column of `ollama list` for ollama.model (D25)" }}
 {{- end }}
@@ -133,6 +134,55 @@ spec:
           configMap: { name: ollama-scripts, defaultMode: 0444 }
         - name: tmp
           emptyDir: { medium: Memory, sizeLimit: 64Mi } # Ollama's key and a few small files
+{{- else }}
+# ollama.fake (CI, D34): a fixed-answer stand-in on Ollama's port, in the gateway image; no model, no pull Job.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fake-chat
+  labels: {{- include "voice.labels" . | nindent 4 }}
+data:
+  fake_chat.py: |
+    {{- .Files.Get "files/fake_chat.py" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  labels:
+    {{- include "voice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 8 }}
+    spec:
+      {{- include "voice.podSecurity" . | nindent 6 }}
+      containers:
+        - name: ollama
+          image: {{ include "voice.image" (dict "root" . "name" "gateway") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["python", "/fake/fake_chat.py"]
+          ports:
+            - { name: http, containerPort: 11434 }
+          env:
+            - { name: CHAT_MODEL, value: {{ .Values.ollama.model | quote }} }
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          readinessProbe:
+            httpGet: { path: /api/version, port: http }
+            periodSeconds: 5
+          {{- include "voice.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: fake, mountPath: /fake, readOnly: true }
+      volumes:
+        - name: fake
+          configMap: { name: fake-chat }
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -31,6 +31,7 @@ gateway = [
 ]
 models = [
     "huggingface-hub>=1.0,<2",
+    "httpx>=0.28,<1", # resumable model downloads (D33); the hub client already depends on it
 ]
 dev = [
     "pytest>=9.2,<10",

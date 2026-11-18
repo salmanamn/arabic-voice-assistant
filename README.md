@@ -2,7 +2,7 @@
 
 A voice assistant that listens and answers in Arabic, built from open components: **faster-whisper** turns speech into text, an LLM writes a short answer, **Piper** speaks it. It runs first on a laptop, then as services on Kubernetes (minikube with Helm), then on AKS.
 
-**Status: M5 — the same four images as a Helm chart on minikube**: probes, requests and limits, an autoscaler for speech to text, the restricted Pod Security Standard and default-deny network policies. Not on AKS yet.
+**Status: M6 — CI on every change.** The four images are built, checked and scanned, the Helm chart is checked against a policy and installed on a k3s cluster for one spoken turn, known-bad changes must fail the tests and the policy, and `main` is protected. The gateway and model-fetch images are published to GHCR. Not on AKS yet.
 
 ```
 browser (push to talk) ──POST /api/turn──▶ gateway :8080 ──▶ stt      POST /v1/audio/transcriptions  (faster-whisper)
@@ -61,6 +61,12 @@ Needs minikube with Calico and metrics-server, kubectl and Helm 4; the images bu
     kubectl -n voice port-forward svc/gateway 8080:8080
 
 Then http://localhost:8080 as above. The first install downloads both models into the cluster (a Job each). What the chart adds to compose: a startup, readiness and liveness probe per service, CPU and memory requests, an autoscaler for `stt` (1–2 replicas), every pod non-root on a read-only filesystem under the restricted Pod Security Standard, and network policies that deny everything a turn does not need (`scripts/check_netpol.py` checks them from inside the pods).
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request and push to `main`, and weekly. Required before a merge: `lint`, `unit`, `tests-must-fail` (17 known-bad code changes must fail the tests), `chart` (Conftest on the rendered chart; 18 known-bad chart changes must be denied), `images` (build, image rules, Trivy: no fixable High/Critical) and `e2e` (k3s on the runner, the chart with Whisper tiny and a fixed-answer chat stand-in, `helm test`, every network flow). On `main`, `publish` pushes `ghcr.io/salmanamn/voice-gateway` and `voice-models`; the weekly run rescans `main` and reports base-image tags that have moved. The speech-to-text and text-to-speech images are not published yet: they carry GPL code and the licence is still open (D23).
+
+Locally: `uv run python scripts/tests_must_fail.py`, and with Helm and Conftest (`./scripts/ci-tools.sh helm conftest`) `python3 scripts/chart_must_fail.py`.
 
 ## Develop without rebuilding images
 

@@ -33,6 +33,11 @@ CATALOG: dict[str, ModelSpec] = {
         patterns=WHISPER_FILES,
         licence="MIT (OpenAI Whisper small, CTranslate2 conversion by Systran)",
     ),
+    "stt-tiny": ModelSpec(
+        repo="Systran/faster-whisper-tiny",
+        patterns=WHISPER_FILES,
+        licence="MIT (OpenAI Whisper tiny, CTranslate2 conversion by Systran); for the cluster test in CI only (D34)",
+    ),
     "stt-turbo": ModelSpec(
         repo="mobiuslabsgmbh/faster-whisper-large-v3-turbo",
         patterns=WHISPER_FILES,
@@ -73,10 +78,18 @@ class HuggingFaceHub:
         return [sibling.rfilename for sibling in self._api.model_info(repo, revision=revision).siblings]
 
     def download(self, repo: str, filename: str, revision: str, staging: Path) -> Path:
-        from huggingface_hub import hf_hub_download
+        import httpx
+        from huggingface_hub import hf_hub_url
 
-        # local_dir keeps partial downloads next to the target, so an interrupted fetch resumes.
-        return Path(hf_hub_download(repo, filename, revision=revision, local_dir=staging))
+        from voice.download import resumable_get
+
+        # Not hf_hub_download: it cannot resume across attempts, and Xet's signed URLs expire on a slow line (D33).
+        # The partial file is kept under staging/<revision>, so a later run (another pod) resumes it.
+        url = hf_hub_url(repo, filename, revision=revision)  # honours HF_ENDPOINT
+        target = staging / revision[:12] / filename
+        timeout = httpx.Timeout(30.0, read=120.0)
+        with httpx.Client(follow_redirects=True, timeout=timeout, headers={"User-Agent": "voice-fetch-job"}) as client:
+            return resumable_get(client, url, target)
 
 
 class IntegrityError(RuntimeError):

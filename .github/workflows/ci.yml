@@ -1,0 +1,213 @@
+name: ci
+
+on:
+    pull_request:
+        branches: [main]
+    push:
+        branches: [main]
+    schedule:
+        - cron: "37 2 * * 1" # Mondays: rebuild and scan main, and look for moved base-image tags (D36)
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+    UV_VERSION: "0.13.8"
+    IMAGES: stt tts gateway models
+
+jobs:
+    lint:
+        name: lint
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - name: Install uv
+              run: pipx install "uv==${UV_VERSION}"
+            - name: Sync (lockfile must be current)
+              run: uv sync --locked
+            - name: ruff format
+              run: uv run ruff format --check --diff .
+            - name: ruff check
+              run: uv run ruff check --output-format=github .
+            - name: Shell scripts
+              run: uvx --from shellcheck-py==0.11.0.1 shellcheck scripts/*.sh deploy/charts/voice/files/*.sh
+            - name: Workflows
+              run: uvx --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint # shellcheck on every run: block too
+            - name: Every pulled image is pinned, the same Ollama everywhere
+              run: uv run python scripts/pin_images.py --check
+            - name: Compose file is valid
+              run: docker compose config -q
+
+    unit:
+        name: unit
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - name: Install uv
+              run: pipx install "uv==${UV_VERSION}"
+            - name: Sync
+              run: uv sync --locked
+            - name: Unit tests
+              run: uv run pytest
+
+    tests-must-fail:
+        name: tests-must-fail
+        runs-on: ubuntu-24.04
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - name: Install uv
+              run: pipx install "uv==${UV_VERSION}"
+            - name: Sync
+              run: uv sync --locked
+            - name: Every known-bad code change must fail the unit tests
+              run: uv run python scripts/tests_must_fail.py
+
+    chart:
+        name: chart
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - name: Install Helm and Conftest (pinned, checksum-verified)
+              run: ./scripts/ci-tools.sh helm conftest
+            - name: helm lint
+              run: helm lint deploy/charts/voice && helm lint deploy/charts/voice -f deploy/ci-values.yaml
+            - name: Policy on what the chart renders (laptop, CI and load-test values)
+              run: |
+                  set -o pipefail
+                  for values in "" "-f deploy/ci-values.yaml" "--set loadtest.enabled=true"; do
+                    echo "values: ${values:-values.yaml}"
+                    # shellcheck disable=SC2086 # $values is a list of helm arguments
+                    helm template voice deploy/charts/voice -n voice $values | conftest test --combine --no-color -p deploy/policy -
+                  done
+            - name: Every known-bad chart change must be denied
+              run: python3 scripts/chart_must_fail.py
+
+    images:
+        name: images
+        runs-on: ubuntu-24.04
+        timeout-minutes: 40
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - name: Install uv and Trivy
+              run: pipx install "uv==${UV_VERSION}" && ./scripts/ci-tools.sh trivy
+            - name: Build the four images
+              run: for i in $IMAGES; do docker build --quiet --target "$i" -t "voice-$i:ci" . ; done
+            - name: Image rules (user, no models inside, packages per image)
+              run: uv run python scripts/check_images.py --tag ci
+            - name: Scan (no fixable High or Critical)
+              run: |
+                  failed=0
+                  for i in $IMAGES; do
+                    if trivy image --quiet --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 "voice-$i:ci" > "trivy-$i.txt"; then
+                      echo "$i: no fixable High/Critical" | tee -a "$GITHUB_STEP_SUMMARY"
+                    else
+                      echo "$i: NOT CLEAN" | tee -a "$GITHUB_STEP_SUMMARY"; cat "trivy-$i.txt"; failed=1
+                    fi
+                  done
+                  exit $failed
+            - name: Save the images for the cluster test and publishing
+              if: github.event_name != 'schedule'
+              run: |
+                  set -o pipefail
+                  tags=(); for i in $IMAGES; do tags+=("voice-$i:ci"); done
+                  docker save "${tags[@]}" | zstd -T0 -3 -q -o images.tar.zst
+                  ls -lh images.tar.zst
+            - uses: actions/upload-artifact@v7
+              if: github.event_name != 'schedule'
+              with:
+                  name: images
+                  path: images.tar.zst
+                  retention-days: 1
+                  compression-level: 0
+
+    e2e:
+        name: e2e
+        needs: images
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - name: Install Helm and k3s
+              run: ./scripts/ci-tools.sh helm k3s
+            - uses: actions/download-artifact@v8
+              with:
+                  name: images
+            - name: Start k3s and load the images
+              run: ./scripts/ci-cluster.sh up && ./scripts/ci-cluster.sh load images.tar.zst
+            - name: Install the chart (Whisper tiny, fake chat model)
+              run: ./scripts/ci-cluster.sh install
+            - name: One spoken turn, then every network flow
+              run: ./scripts/ci-cluster.sh test
+            - name: Cluster state
+              if: failure()
+              run: ./scripts/ci-cluster.sh logs
+
+    publish:
+        name: publish
+        needs: [lint, unit, tests-must-fail, chart, images, e2e]
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        runs-on: ubuntu-24.04
+        timeout-minutes: 15
+        permissions:
+            contents: read
+            packages: write
+        env:
+            # stt and tts stay unpublished until the licence is decided (D23): only the gateway and the models job go out.
+            PUBLISH: gateway models
+            REGISTRY: ghcr.io/${{ github.repository_owner }}
+        steps:
+            - uses: actions/download-artifact@v8
+              with:
+                  name: images
+            - name: Load
+              run: zstd -dc images.tar.zst | docker load
+            - name: Push to GHCR
+              env:
+                  TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  ACTOR: ${{ github.actor }}
+              run: |
+                  echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+                  short=${GITHUB_SHA::12}
+                  echo "| image | pushed |" >> "$GITHUB_STEP_SUMMARY"; echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+                  for i in $PUBLISH; do
+                    for tag in "sha-$short" main; do
+                      docker tag "voice-$i:ci" "$REGISTRY/voice-$i:$tag"
+                      docker push --quiet "$REGISTRY/voice-$i:$tag"
+                    done
+                    digest=$(docker buildx imagetools inspect "$REGISTRY/voice-$i:sha-$short" --format '{{.Manifest.Digest}}')
+                    echo "| voice-$i | \`$REGISTRY/voice-$i:sha-$short@$digest\` |" >> "$GITHUB_STEP_SUMMARY"
+                  done
+                  docker logout ghcr.io
+
+    pins:
+        name: pins
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  persist-credentials: false
+            - name: Have the pinned tags moved? (fails with the diff; re-pin on a branch, rebuild, scan)
+              run: python3 scripts/pin_images.py && git diff --exit-code

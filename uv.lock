@@ -52,6 +52,7 @@ gateway = [
     { name = "uvicorn" },
 ]
 models = [
+    { name = "httpx" },
     { name = "huggingface-hub" },
 ]
 stt = [
@@ -85,7 +86,10 @@ gateway = [
     { name = "python-multipart", specifier = ">=0.0.33,<0.1" },
     { name = "uvicorn", specifier = ">=0.54,<1" },
 ]
-models = [{ name = "huggingface-hub", specifier = ">=1.0,<2" }]
+models = [
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "huggingface-hub", specifier = ">=1.0,<2" },
+]
 stt = [
     { name = "av", specifier = ">=18,<19" },
     { name = "fastapi", specifier = ">=0.163,<1" },
