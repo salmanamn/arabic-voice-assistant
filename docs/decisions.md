@@ -328,3 +328,17 @@
   - gpt-5.4-mini for a few dozen turns: cents
   - AKS Free tier: no control-plane charge
 - Billing stops when the stack is destroyed (both resource groups). The lab budget is Project 1's (20 a month); check it before each apply.
+
+## D51 — deploy-chart signs the Azure CLI in again before each step that needs a new Entra ID token
+- GitHub's OIDC token for a job expires about 5 minutes after it is issued. `az login --federated-token` keeps it as the client assertion and sends it again whenever the CLI needs a token for another resource: ACR's token exchange, and the AKS API server (`kubelogin -l azurecli` gets that token from `az account get-access-token`). In `deploy-chart`, downloading, loading and pushing the images can take longer than 5 minutes, and the first AKS token would then fail with `AADSTS700024: Client assertion is not within its valid time range`.
+- So `deploy.yml` runs `scripts/az-login-oidc.sh` again, with a fresh OIDC token, at the start of the images step and the credentials step. Tokens the CLI already has stay valid for about an hour, longer than the 45-minute job.
+- Terraform is not affected: azurerm and its backend ask GitHub for a new OIDC token each time they need one.
+- Found while writing the M8 runbook, before the first deploy: a precaution, not a failure seen on Azure.
+
+## D52 — The operator's kubectl reaches one namespace
+- The operator's `Azure Kubernetes Service RBAC Admin` is scoped to `namespaces/voice` (D46). Nodes, `kube-system` and the `kubernetes` Service in `default` are outside it.
+- `aks-deploy.sh credentials` prints `kubectl auth whoami` and lists the nodes only for an identity that may see them (CI's deployer).
+- `check_netpol.py` takes the API server's address from a pod's `KUBERNETES_SERVICE_HOST` when it can't read the Service in `default`.
+- The node's allocation (the requests of every pod, ours and the cluster's) is printed by the deploy job, which is cluster admin, after `helm upgrade`.
+- On the laptop `aks-deploy.sh` keeps its settings in `~/.cache/voice-aks`, because a WSL restart clears `/tmp`. CI uses `$RUNNER_TEMP`.
+- `scripts/cost.sh FROM [TO]` reads the actual cost of the two resource groups from Cost Management, for the day after a session (D50).

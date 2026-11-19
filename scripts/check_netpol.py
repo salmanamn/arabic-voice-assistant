@@ -89,6 +89,16 @@ def connect(namespace: str, pod: str, container: str | None, host: str, port: in
     return kubectl(namespace, *target, *command, check=False) or "error"
 
 
+def kube_api_address(namespace: str) -> str:
+    """The API server's cluster IP. A role scoped to one namespace can't read Services in `default` (the operator
+    on AKS, D46): then ask a pod, which has it in KUBERNETES_SERVICE_HOST whether or not it mounts a token."""
+    address = kubectl("default", "get", "svc", "kubernetes", "-o", "jsonpath={.spec.clusterIP}", check=False)
+    if address:
+        return address
+    ask = "import os; print(os.environ['KUBERNETES_SERVICE_HOST'])"
+    return kubectl(namespace, "exec", "deploy/gateway", "-c", "gateway", "--", "python", "-c", ask)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--namespace", default="voice")
@@ -116,7 +126,7 @@ def main() -> int:
         "gateway": (ip["gateway"], 8080),
         **({"ollama": (ip["ollama"], 11434)} if ollama else {}),
         "outside": (outside_host, int(outside_port)),
-        "kube-api": (kubectl("default", "get", "svc", "kubernetes", "-o", "jsonpath={.spec.clusterIP}"), 443),
+        "kube-api": (kube_api_address(ns), 443),
     }
     named = {"model host": args.model_host, "entra": args.entra_host}
     if args.chat_host:

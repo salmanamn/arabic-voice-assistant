@@ -15,7 +15,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-WORK=${RUNNER_TEMP:-/tmp}/voice-aks
+WORK=${RUNNER_TEMP:-$HOME/.cache}/voice-aks # laptop: under ~, which a WSL restart keeps (/tmp it clears)
 SETTINGS=$WORK/settings.json
 RUN_VALUES=$WORK/azure-run.yaml # what this script adds to deploy/azure-values.yaml (shape: deploy/policy/fixtures)
 OWNER=${GHCR_OWNER:-salmanamn}
@@ -77,7 +77,9 @@ images() {
 credentials() {
   az aks get-credentials --resource-group "$(setting resource_group)" --name "$(setting cluster)" --overwrite-existing --only-show-errors
   kubelogin convert-kubeconfig -l azurecli # Entra token from the az CLI's sign-in (local accounts are off, D41)
-  kubectl get nodes -o wide
+  kubectl auth whoami
+  # Nodes are cluster-scoped: CI's deployer (cluster admin) sees them, the operator's namespace role doesn't (D46, D52).
+  kubectl get nodes -o wide 2>/dev/null || echo "OK   nodes not visible to this identity (role scoped to namespace $(setting namespace))"
 }
 
 install() {
@@ -86,6 +88,8 @@ install() {
   helm upgrade --install voice deploy/charts/voice -n "$(setting namespace)" \
     -f deploy/azure-values.yaml -f "$RUN_VALUES" --wait --timeout 25m
   kubectl -n "$(setting namespace)" get pods,jobs,pvc
+  # What the one node has left (D42): requests of every pod, ours and the cluster's. Cluster admin only (CI).
+  kubectl describe nodes 2>/dev/null | sed -n '/^Allocated resources:/,/^Events:/p' || true
 }
 
 test_() {
