@@ -1,0 +1,28 @@
+Plan: 16 to add, 0 to change, 0 to destroy.
+25 tests, 25 passed, 0 warnings, 0 failures, 0 exceptions
+OK       baseline: 25 tests, 25 passed, 0 warnings, 0 failures, 0 exceptions
+DENIED   cluster-local-accounts           module.stack.module.aks[0].azurerm_kubernetes_cluster.this: local accounts must be disabled (Entra ID only, D41)
+DENIED   cluster-kubernetes-rbac-only     module.stack.module.aks[0].azurerm_kubernetes_cluster.this: Entra ID integration with Azure RBAC for Kubernetes is required (D41)
+DENIED   cluster-no-workload-identity     module.stack.module.aks[0].azurerm_kubernetes_cluster.this: the OIDC issuer and workload identity are required for the gateway (D45)
+DENIED   cluster-run-command              module.stack.module.aks[0].azurerm_kubernetes_cluster.this: run command must be off (no path around kubectl and Azure RBAC)
+DENIED   cluster-calico                   module.stack.module.aks[0].azurerm_kubernetes_cluster.this: Azure CNI with the Cilium dataplane and ACNS security (FQDN policies) is required (D44)
+DENIED   cluster-no-fqdn-filtering        module.stack.module.aks[0].azurerm_kubernetes_cluster.this: Azure CNI with the Cilium dataplane and ACNS security (FQDN policies) is required (D44)
+DENIED   cluster-floating-version         module.stack.module.aks[0].azurerm_kubernetes_cluster.this: pin the Kubernetes minor version (deploy/namespace.yaml pins the Pod Security version to it)
+DENIED   cluster-paid-tier                module.stack.module.aks[0].azurerm_kubernetes_cluster.this: Free control-plane tier for the lab (D50)
+DENIED   cluster-autoscaler               module.stack.module.aks[0].azurerm_kubernetes_cluster.this: one node, no autoscaler (the models volume is ReadWriteOnce, D43)
+DENIED   cluster-big-node                 module.stack.module.aks[0].azurerm_kubernetes_cluster.this: node size Standard_D32s_v5 is not one of {"Standard_F8als_v6", "Standard_F8as_v6"} (D42)
+DENIED   cluster-second-pool              module.stack.module.aks[0].azurerm_kubernetes_cluster_node_pool.user: no second node pool (D43)
+DENIED   cluster-full-audit-log           module.stack.module.aks[0].azurerm_monitor_diagnostic_setting.cluster[0]: the cluster logs kube-audit-admin and guard, nothing else (D47)
+DENIED   registry-admin-user              module.stack.module.registry.azurerm_container_registry.this: no admin user and no anonymous pull (Entra ID only, D38)
+DENIED   registry-premium                 module.stack.module.registry.azurerm_container_registry.this: Basic registry for the lab (D38, D50)
+DENIED   openai-api-keys                  module.stack.module.openai[0].azurerm_cognitive_account.this: Azure OpenAI key auth must be disabled (local_auth_enabled = false)
+DENIED   openai-no-subdomain              module.stack.module.openai[0].azurerm_cognitive_account.this: a custom subdomain is required for Entra ID tokens
+DENIED   openai-provisioned-throughput    module.stack.module.openai[0].azurerm_cognitive_deployment.chat: provisioned throughput (GlobalProvisionedManaged) is billed per hour whether used or not; use a Standard SKU
+DENIED   identity-for-default-account     module.stack.azurerm_federated_identity_credential.gateway[0]: the federated credential trusts only system:serviceaccount:voice:gateway with audience api://AzureADTokenExchange
+DENIED   role-owner                       module.stack.azurerm_role_assignment.operator["operator_namespace"]: role /subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/roleDefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635 is not on the allowlist (D46)
+DENIED   operator-cluster-admin           module.stack.azurerm_role_assignment.operator["operator_namespace"]: roles go to managed identities (ServicePrincipal); a User only gets namespace admin or OpenAI user
+DENIED   role-to-user                     module.stack.azurerm_role_assignment.service["deployer"]: roles go to managed identities (ServicePrincipal); a User only gets namespace admin or OpenAI user
+DENIED   diagnostics-other-workspace      module.stack.module.aks[0].azurerm_monitor_diagnostic_setting.cluster[0]: diagnostics must go to log-slz-platform
+DENIED   diagnostics-missing              module.stack.module.openai[0].azurerm_cognitive_account.this: no diagnostic setting in module.stack.module.openai[0]
+DENIED   chart-settings-missing           output summary.chart_settings missing: the chart deploy can't find the registry, endpoint and identity
+24/24 mutations denied

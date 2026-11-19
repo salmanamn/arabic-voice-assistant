@@ -1,3 +1,5 @@
+{{- include "voice.checkAzure" . }}
+{{- $azure := .Values.azureOpenAI }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,9 +13,19 @@ spec:
     matchLabels: {{- include "voice.selector" (dict "root" . "component" "gateway") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "voice.selector" (dict "root" . "component" "gateway") | nindent 8 }}
+      labels:
+        {{- include "voice.selector" (dict "root" . "component" "gateway") | nindent 8 }}
+        {{- if $azure.enabled }}
+        azure.workload.identity/use: "true" # the AKS webhook injects the identity's token file and env (D45)
+        {{- end }}
     spec:
       {{- include "voice.podSecurity" . | nindent 6 }}
+      {{- if $azure.enabled }}
+      serviceAccountName: gateway
+      {{- end }}
+      {{- if eq .Values.network.egress "fqdn" }}
+      {{- include "voice.fqdnDns" . | nindent 6 }}
+      {{- end }}
       terminationGracePeriodSeconds: 45
       containers:
         - name: gateway
@@ -24,8 +36,17 @@ spec:
           env:
             - { name: STT_URL, value: "http://stt:8000/v1" }
             - { name: TTS_URL, value: "http://tts:8000/v1" }
+            {{- if $azure.enabled }}
+            # Azure OpenAI with an Entra ID token from the workload identity: no key anywhere (D45)
+            - { name: OPENAI_BASE_URL, value: {{ $azure.endpoint | quote }} }
+            - { name: OPENAI_AUTH, value: entra }
+            - { name: CHAT_MODEL, value: {{ $azure.deployment | quote }} }
+            - { name: CHAT_REASONING_EFFORT, value: {{ $azure.reasoningEffort | quote }} }
+            - { name: CHAT_MAX_TOKENS, value: {{ $azure.maxTokens | quote }} }
+            {{- else }}
             - { name: OPENAI_BASE_URL, value: "http://ollama:11434/v1" }
             - { name: CHAT_MODEL, value: {{ .Values.ollama.model | quote }} }
+            {{- end }}
           resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
           {{- include "voice.probes" (dict "startupSeconds" 60) | nindent 10 }}
           lifecycle:
@@ -46,3 +67,16 @@ spec:
   selector: {{- include "voice.selector" (dict "root" . "component" "gateway") | nindent 4 }}
   ports:
     - { name: http, port: 8080, targetPort: http }
+{{- if $azure.enabled }}
+---
+# The gateway's workload identity (D45): Azure trusts tokens for this service account through the federated
+# credential on the gateway's managed identity (issuer = the cluster's OIDC issuer). No Kubernetes API token.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+  labels: {{- include "voice.labels" . | nindent 4 }}
+  annotations:
+    azure.workload.identity/client-id: {{ $azure.clientId | quote }}
+automountServiceAccountToken: false
+{{- end -}}

@@ -26,6 +26,8 @@ class Host:
             return httpx.Response(403)
         if action == "404":
             return httpx.Response(404)
+        if action == "refused":  # a host the egress policy does not allow: DNS answers REFUSED, nothing connects
+            raise httpx.ConnectError("[Errno -3] Temporary failure in name resolution", request=request)
         if action == "ignore-range":
             return httpx.Response(200, content=DATA)
         body = DATA[start:]
@@ -119,3 +121,12 @@ def test_progress_is_reported_while_a_long_download_runs(tmp_path):
     ticks = iter(range(0, 10_000, 40))  # every clock() call is 40 s later
     _, lines = get(Host(), tmp_path, clock=lambda: next(ticks), report_every=30)
     assert any(line.startswith("  model.bin: ") and "MB/s" in line for line in lines)
+
+
+def test_a_failed_attempt_names_the_host_it_could_not_reach(tmp_path):
+    host = Host(["cut:4000", "refused"])
+    path, lines = get(host, tmp_path)
+    assert path.read_bytes() == DATA
+    stopped = [line for line in lines if "stopped at" in line]
+    assert "(cdn.test: connection reset by peer)" in stopped[0]
+    assert "(cdn.test: [Errno -3] Temporary failure in name resolution)" in stopped[1]

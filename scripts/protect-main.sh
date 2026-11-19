@@ -8,7 +8,7 @@ set -euo pipefail
 
 REPO=${REPO:-salmanamn/arabic-voice-assistant}
 REF=${1:?usage: protect-main.sh <ref with green CI>}
-CHECKS=(lint unit tests-must-fail chart images e2e) # publish and pins: not what a PR waits for
+CHECKS=(lint unit tests-must-fail chart iac-static iac-plan images e2e) # publish and pins: not what a PR waits for
 
 runs=$(gh api "repos/$REPO/commits/$REF/check-runs?per_page=100" \
   --jq '.check_runs[] | [.name, (.conclusion // "pending"), (.app.id | tostring)] | @tsv')

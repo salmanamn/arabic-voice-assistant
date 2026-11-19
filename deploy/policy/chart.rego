@@ -222,3 +222,113 @@ job_bounded(w) if {
 	w.spec.template.spec.restartPolicy == "Never"
 	w.spec.backoffLimit <= 6
 }
+# --- images (D38) ---
+
+deny contains sprintf("%s/%s: an image from a registry must be pulled by digest, not %s", [x.owner, x.c.name, x.c.image]) if {
+	some x in containers
+	contains(x.c.image, "/")
+	not regex.match(`@sha256:[0-9a-f]{64}$`, x.c.image)
+}
+
+# --- egress by host name (network.egress=fqdn, Cilium on AKS, D44) ---
+
+cilium := [p | some p in docs; p.kind == "CiliumNetworkPolicy"]
+
+deny contains sprintf("NetworkPolicy/%s: no ipBlock when egress is by name (a public range would allow every host)", [p.metadata.name]) if {
+	count(cilium) > 0
+	some p in policies
+	some rule in object.get(p.spec, "egress", [])
+	some to in object.get(rule, "to", [])
+	to.ipBlock
+}
+
+cnp_selected(p) := {p.spec.endpointSelector.matchLabels["app.kubernetes.io/component"]} if p.spec.endpointSelector.matchLabels["app.kubernetes.io/component"]
+
+cnp_selected(p) := {v | some e in p.spec.endpointSelector.matchExpressions; e.key == "app.kubernetes.io/component"; e.operator == "In"; some v in e.values} if {
+	not p.spec.endpointSelector.matchLabels["app.kubernetes.io/component"]
+}
+
+deny contains sprintf("CiliumNetworkPolicy/%s: must select pods by component (an empty selector selects every pod)", [p.metadata.name]) if {
+	some p in cilium
+	count(object.get(p.spec, "endpointSelector", {})) == 0
+}
+
+deny contains sprintf("CiliumNetworkPolicy/%s: only the download Jobs and the gateway reach hosts by name, not %v", [p.metadata.name, extra]) if {
+	some p in cilium
+	extra := cnp_selected(p) - {"models", "ollama-pull", "gateway"}
+	count(extra) > 0
+}
+
+deny contains sprintf("CiliumNetworkPolicy/%s: egress rules may only name hosts (toFQDNs) or kube-dns (toEndpoints), not %v", [p.metadata.name, extra]) if {
+	some p in cilium
+	some rule in object.get(p.spec, "egress", [])
+	extra := {k | some k, _ in rule} - {"toFQDNs", "toEndpoints", "toPorts"}
+	count(extra) > 0
+}
+
+deny contains sprintf("CiliumNetworkPolicy/%s: \"*\" matches every name", [p.metadata.name]) if {
+	some p in cilium
+	[_, value] := walk(p.spec)
+	value.matchPattern == "*"
+}
+
+deny contains sprintf("CiliumNetworkPolicy/%s: hosts by name on port 443 only, not %v", [p.metadata.name, port.port]) if {
+	some p in cilium
+	some rule in object.get(p.spec, "egress", [])
+	rule.toFQDNs
+	some tp in object.get(rule, "toPorts", [])
+	some port in tp.ports
+	port.port != "443"
+}
+
+deny contains sprintf("CiliumNetworkPolicy/%s: toFQDNs needs a DNS rule to kube-dns (without it Cilium never learns the addresses, and DNS is unfiltered)", [p.metadata.name]) if {
+	some p in cilium
+	some rule in object.get(p.spec, "egress", [])
+	rule.toFQDNs
+	not dns_rule(p)
+}
+
+dns_rule(p) if {
+	some rule in p.spec.egress
+	some ep in rule.toEndpoints
+	ep.matchLabels["k8s:k8s-app"] == "kube-dns"
+	some tp in rule.toPorts
+	count(tp.rules.dns) > 0
+}
+
+# --- workload identity: the gateway only (D45) ---
+
+pod_labels contains {"name": sprintf("%s/%s", [w.kind, w.metadata.name]), "labels": object.get(w.spec.template, ["metadata", "labels"], {})} if some w in workloads
+
+pod_labels contains {"name": sprintf("Pod/%s", [p.metadata.name]), "labels": object.get(p.metadata, "labels", {})} if {
+	some p in docs
+	p.kind == "Pod"
+}
+
+deny contains sprintf("%s: only the gateway runs with a workload identity", [x.name]) if {
+	some x in pod_labels
+	x.labels["azure.workload.identity/use"] == "true"
+	x.name != "Deployment/gateway"
+}
+
+service_accounts := [a | some a in docs; a.kind == "ServiceAccount"]
+
+deny contains sprintf("ServiceAccount/%s: only the gateway's service account carries a workload identity", [a.metadata.name]) if {
+	some a in service_accounts
+	object.get(a.metadata, ["annotations", "azure.workload.identity/client-id"], "") != ""
+	a.metadata.name != "gateway"
+}
+
+deny contains sprintf("ServiceAccount/%s: automountServiceAccountToken must be false", [a.metadata.name]) if {
+	some a in service_accounts
+	a.automountServiceAccountToken != false
+}
+
+deny contains "Deployment/gateway: with OPENAI_AUTH=entra there is no OPENAI_API_KEY (D45)" if {
+	some w in workloads
+	w.metadata.name == "gateway"
+	some c in w.spec.template.spec.containers
+	{"name": "OPENAI_AUTH", "value": "entra"} in c.env
+	some e in c.env
+	e.name == "OPENAI_API_KEY"
+}

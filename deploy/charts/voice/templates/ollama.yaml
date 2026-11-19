@@ -1,3 +1,5 @@
+{{- if not .Values.azureOpenAI.enabled }}
+{{- /* No Ollama at all with Azure OpenAI (AKS, D45). */ -}}
 {{- if not .Values.ollama.fake }}
 {{- if not .Values.ollama.modelId }}
 {{- fail "ollama.modelId is required: the ID column of `ollama list` for ollama.model (D25)" }}
@@ -193,3 +195,4 @@ spec:
   selector: {{- include "voice.selector" (dict "root" . "component" "ollama") | nindent 4 }}
   ports:
     - { name: http, port: 11434, targetPort: http }
+{{- end -}}

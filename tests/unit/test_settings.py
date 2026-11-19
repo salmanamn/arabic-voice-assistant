@@ -16,6 +16,7 @@ def test_defaults_are_the_laptop_values():
     assert 1 <= settings.stt_threads <= 8
     assert settings.tts_voice_dir == Path("models/tts-ar-kareem-medium")
     assert settings.openai_base_url == "http://127.0.0.1:11434/v1"
+    assert settings.openai_auth == "key"
     assert settings.chat_model == "phi4-mini:3.8b"
     assert settings.chat_reasoning_effort == ""
     assert settings.stt_url == "http://127.0.0.1:8001/v1"
@@ -50,6 +51,11 @@ def test_environment_overrides():
     assert settings.chat_max_tokens == 400
     assert settings.stt_url == "http://stt:8000/v1"
     assert settings.max_waiting == 0
+
+
+def test_unknown_openai_auth_is_refused():
+    with pytest.raises(ValueError, match="OPENAI_AUTH"):
+        load({"OPENAI_AUTH": "managed-identity"})
 
 
 def fake_sysfs(root, siblings: dict[int, str], name: str = "core_cpus_list"):

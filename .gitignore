@@ -12,3 +12,12 @@ out/
 # Local settings and lab data
 .env
 data/
+
+# Terraform (infra/): providers, state, plans, local inputs
+.terraform/
+.terraform-validate/
+*.tfstate
+*.tfstate.*
+*.tfplan
+plan.json
+terraform.tfvars

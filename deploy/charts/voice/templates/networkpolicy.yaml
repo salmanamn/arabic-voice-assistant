@@ -1,5 +1,9 @@
 {{- /* D29: everything denied, then only the flows a turn, the two jobs and the tests need. Probes from the
-node's kubelet are always allowed by NetworkPolicy; `kubectl port-forward` enters the pod and is not filtered. */ -}}
+node's kubelet are always allowed by NetworkPolicy; `kubectl port-forward` enters the pod and is not filtered.
+network.egress=fqdn (AKS with Cilium, D44): the jobs and the gateway reach the internet by host name only, through
+CiliumNetworkPolicies at the end of this file; no NetworkPolicy then has an ipBlock. */ -}}
+{{- $fqdn := eq .Values.network.egress "fqdn" }}
+{{- $ollama := not .Values.azureOpenAI.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -9,7 +13,8 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-# gateway: from the test and load pods (the browser comes through port-forward); to stt, tts and Ollama.
+# gateway: from the test and load pods (the browser comes through port-forward); to stt, tts and Ollama (or, with
+# Azure OpenAI, to its endpoint and Entra ID by name: gateway-by-name below).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -28,10 +33,14 @@ spec:
         - {{- include "voice.peer" (dict "root" . "component" "stt") | nindent 10 }}
         - {{- include "voice.peer" (dict "root" . "component" "tts") | nindent 10 }}
       ports: [{ protocol: TCP, port: 8000 }]
+    {{- if $ollama }}
     - to:
         - {{- include "voice.peer" (dict "root" . "component" "ollama") | nindent 10 }}
       ports: [{ protocol: TCP, port: 11434 }]
-    {{- include "voice.dnsEgress" . | nindent 4 }}
+    {{- end }}
+    {{- if not (and $fqdn .Values.azureOpenAI.enabled) }}
+    {{- include "voice.dnsEgress" . | nindent 4 }}{{/* else: DNS only through gateway-by-name, filtered */}}
+    {{- end }}
 ---
 # stt: from the gateway and the load test; nothing out.
 apiVersion: networking.k8s.io/v1
@@ -66,6 +75,7 @@ spec:
         - {{- include "voice.peer" (dict "root" . "component" "loadtest") | nindent 10 }}
       ports: [{ protocol: TCP, port: 8000 }]
 ---
+{{- if $ollama }}
 # Ollama: from the gateway only; nothing out (no registry, no ollama.com).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -81,7 +91,9 @@ spec:
         - {{- include "voice.peer" (dict "root" . "component" "gateway") | nindent 10 }}
       ports: [{ protocol: TCP, port: 11434 }]
 ---
-# The two download jobs: DNS and the model hosts on 443; nothing in.
+{{- end }}
+# The two download jobs: DNS and the model hosts on 443 (by address range, or by name: model-hosts-by-name);
+# nothing in.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -93,9 +105,11 @@ spec:
       - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}] }
       - { key: app.kubernetes.io/component, operator: In, values: [models, ollama-pull] }
   policyTypes: [Ingress, Egress]
+  {{- if not $fqdn }}
   egress:
     {{- include "voice.dnsEgress" . | nindent 4 }}
     {{- include "voice.modelHostEgress" . | nindent 4 }}
+  {{- end }}{{/* else: DNS and the hosts only through model-hosts-by-name */}}
 ---
 # helm test: DNS, the gateway (the turn) and tts (it speaks the question first).
 apiVersion: networking.k8s.io/v1
@@ -132,3 +146,40 @@ spec:
         - {{- include "voice.peer" (dict "root" . "component" "tts") | nindent 10 }}
       ports: [{ protocol: TCP, port: 8000 }]
     {{- include "voice.dnsEgress" . | nindent 4 }}
+{{- if $fqdn }}
+---
+# By name (D44): the download jobs resolve only the model hosts and reach them on 443, nothing else. Cilium's DNS
+# proxy answers only names on the list and learns their addresses; an address no allowed name resolved to stays
+# closed. The NetworkPolicy model-downloads has no egress rule in this mode, so DNS goes through this filter only.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: model-hosts-by-name
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}] }
+      - { key: app.kubernetes.io/component, operator: In, values: [models, ollama-pull] }
+  egress:
+    {{- include "voice.fqdnEgress" (dict "root" . "hosts" .Values.network.fqdn.modelHosts "dnsNames" .Values.network.fqdn.modelHosts) | nindent 4 }}
+{{- if .Values.azureOpenAI.enabled }}
+---
+# By name (D44, D45): the gateway reaches its Azure OpenAI endpoint and Entra ID (the token exchange of its
+# workload identity) on 443; it resolves only those names and the Services of this namespace (its NetworkPolicy has
+# no DNS rule in this mode).
+{{- $openai := (urlParse .Values.azureOpenAI.endpoint).host }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gateway-by-name
+  labels: {{- include "voice.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels: {{- include "voice.selector" (dict "root" . "component" "gateway") | nindent 6 }}
+  egress:
+    {{- $hosts := list $openai .Values.network.fqdn.entraHost }}
+    {{- $names := append $hosts (printf "*.%s.svc.cluster.local" .Release.Namespace) }}
+    {{- include "voice.fqdnEgress" (dict "root" . "hosts" $hosts "dnsNames" $names) | nindent 4 }}
+{{- end }}
+{{- end -}}

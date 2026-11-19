@@ -1,12 +1,16 @@
 """NetworkPolicy check on the cluster (M5, D29): every flow a turn needs is open, and a sample of others is closed.
 
 uv run python scripts/check_netpol.py [--namespace voice] [--outside 1.1.1.1:443] [--evidence FILE.md]
+uv run python scripts/check_netpol.py --egress fqdn --chat-host <account>.openai.azure.com    (AKS, D44)
 
 Connects from inside the pods (kubectl exec) to the Services by cluster IP, so a closed DNS port does not hide an
-open one, and to one address outside the cluster (--outside: a public address on 443, standing in for a model
-host). The download jobs and the test pods are not running at check time, so the script starts short-lived probe
-pods with their labels (and one with a label no policy knows). Each line: from, to, expected, seen. Exit 1 when any
-line differs from what is expected.
+open one, and to one address outside the cluster (--outside: a public address on 443). With --egress cidr (minikube,
+k3s) that address stands in for a model host and the download jobs reach it. With --egress fqdn (Cilium) nothing
+reaches it, and three named hosts are checked instead: the model host (huggingface.co), the chat endpoint and
+Entra ID; only the download jobs reach the first, only the gateway the other two. Ollama is left out when the
+release has none (Azure OpenAI). The download jobs and the test pods are not running at check time, so the script
+starts short-lived probe pods with their labels (and one with a label no policy knows). Each line: from, to,
+expected, seen. Exit 1 when any line differs from what is expected.
 """
 
 import argparse
@@ -38,8 +42,9 @@ def kubectl(namespace: str, *args: str, check: bool = True) -> str:
     return result.stdout.strip()
 
 
-def probe_pod(namespace: str, name: str, component: str, image: str, instance: str) -> str:
-    """A pod that sleeps, with the labels of `component` and the restricted security settings; returns its name."""
+def probe_pod(namespace: str, name: str, component: str, image: str, instance: str, fqdn: bool = False) -> str:
+    """A pod that sleeps, with the labels of `component` and the restricted security settings; returns its name.
+    With name-based egress it resolves like the chart's pods do (ndots 1, D44)."""
     spec = {
         "metadata": {
             "labels": {"app.kubernetes.io/name": "voice", "app.kubernetes.io/instance": instance, LABEL: component}
@@ -68,6 +73,8 @@ def probe_pod(namespace: str, name: str, component: str, image: str, instance: s
             ],
         },
     }
+    if fqdn:
+        spec["spec"]["dnsConfig"] = {"options": [{"name": "ndots", "value": "1"}]}
     kubectl(namespace, "delete", "pod", name, "--ignore-not-found", "--wait=true")
     kubectl(namespace, "run", name, f"--image={image}", "--restart=Never", f"--overrides={json.dumps(spec)}")
     return name
@@ -87,29 +94,44 @@ def main() -> int:
     parser.add_argument("--namespace", default="voice")
     parser.add_argument("--release", default="voice")
     parser.add_argument("--outside", default="1.1.1.1:443", help="an address outside the cluster, host:port")
+    parser.add_argument("--egress", choices=("cidr", "fqdn"), default="cidr", help="the chart's network.egress")
+    parser.add_argument("--model-host", default="huggingface.co:443", help="fqdn: a model host, host:port")
+    parser.add_argument("--chat-host", help="fqdn with Azure OpenAI: the endpoint's host name (port 443)")
+    parser.add_argument("--entra-host", default="login.microsoftonline.com:443", help="fqdn: Entra ID, host:port")
     parser.add_argument("--evidence", type=Path, help="also write the table as Markdown to this file")
     args = parser.parse_args()
     ns = args.namespace
     outside_host, outside_port = args.outside.rsplit(":", 1)
 
+    services = kubectl(ns, "get", "svc", "-o", "jsonpath={.items[*].metadata.name}").split()
+    ollama = "ollama" in services
     ip = {
         name: kubectl(ns, "get", "svc", name, "-o", "jsonpath={.spec.clusterIP}")
         for name in ("stt", "tts", "gateway", "ollama")
+        if name in services
     }
     targets = {
         "stt": (ip["stt"], 8000),
         "tts": (ip["tts"], 8000),
         "gateway": (ip["gateway"], 8080),
-        "ollama": (ip["ollama"], 11434),
+        **({"ollama": (ip["ollama"], 11434)} if ollama else {}),
         "outside": (outside_host, int(outside_port)),
         "kube-api": (kubectl("default", "get", "svc", "kubernetes", "-o", "jsonpath={.spec.clusterIP}"), 443),
     }
+    named = {"model host": args.model_host, "entra": args.entra_host}
+    if args.chat_host:
+        named["chat host"] = f"{args.chat_host}:443"
+    if args.egress == "fqdn":
+        for name, hostport in named.items():
+            host, port = hostport.rsplit(":", 1)
+            targets[name] = (host, int(port))
     image = kubectl(ns, "get", "deploy", "gateway", "-o", "jsonpath={.spec.template.spec.containers[0].image}")
+    fqdn = args.egress == "fqdn"
     probes = {
-        "models (job)": probe_pod(ns, "netpol-probe-models", "models", image, args.release),
-        "test (helm test)": probe_pod(ns, "netpol-probe-test", "test", image, args.release),
-        "loadtest": probe_pod(ns, "netpol-probe-loadtest", "loadtest", image, args.release),
-        "unknown pod": probe_pod(ns, "netpol-probe-unknown", "unknown", image, args.release),
+        "models (job)": probe_pod(ns, "netpol-probe-models", "models", image, args.release, fqdn),
+        "test (helm test)": probe_pod(ns, "netpol-probe-test", "test", image, args.release, fqdn),
+        "loadtest": probe_pod(ns, "netpol-probe-loadtest", "loadtest", image, args.release, fqdn),
+        "unknown pod": probe_pod(ns, "netpol-probe-unknown", "unknown", image, args.release, fqdn),
     }
     for pod in probes.values():
         kubectl(ns, "wait", "--for=condition=Ready", f"pod/{pod}", "--timeout=120s")
@@ -120,19 +142,22 @@ def main() -> int:
         "gateway": ("deploy/gateway", "gateway", False),
         "stt": ("deploy/stt", "stt", False),
         "tts": ("deploy/tts", "tts", False),
-        "ollama": ("deploy/ollama", "ollama", True),
+        **({"ollama": ("deploy/ollama", "ollama", True)} if ollama else {}),
         **{name: (pod, None, False) for name, pod in probes.items()},
     }
     expected_open = {
         ("gateway", "stt"),
         ("gateway", "tts"),
         ("gateway", "ollama"),
-        ("models (job)", "outside"),
         ("test (helm test)", "gateway"),
         ("test (helm test)", "tts"),
         ("loadtest", "stt"),
         ("loadtest", "tts"),
     }
+    if args.egress == "cidr":
+        expected_open.add(("models (job)", "outside"))  # public addresses on 443 (D29)
+    else:  # by name (D44): the address is closed for everyone; each named host for its one client
+        expected_open |= {("models (job)", "model host"), ("gateway", "chat host"), ("gateway", "entra")}
     rows, wrong = [], 0
     for source, (pod, container, bash) in sources.items():
         for target, (host, port) in targets.items():
@@ -143,18 +168,25 @@ def main() -> int:
             ok = seen == want
             wrong += not ok
             rows.append(
-                (source, f"{target} ({host}:{port})" if target in ("outside", "kube-api") else target, want, seen, ok)
+                (
+                    source,
+                    f"{target} ({host}:{port})" if target in ("outside", "kube-api", *named) else target,
+                    want,
+                    seen,
+                    ok,
+                )
             )
-            print(f"{'OK  ' if ok else 'FAIL'} {source:18} -> {target:9} expected {want:6} seen {seen}", flush=True)
+            print(f"{'OK  ' if ok else 'FAIL'} {source:18} -> {target:10} expected {want:6} seen {seen}", flush=True)
 
     for pod in probes.values():
         kubectl(ns, "delete", "pod", pod, "--wait=false")
     print(f"{len(rows) - wrong}/{len(rows)} flows as expected")
     if args.evidence:
         lines = [
-            "# NetworkPolicy check (M5)",
+            f"# NetworkPolicy check (egress {args.egress})",
             "",
-            f"Namespace `{ns}`; `scripts/check_netpol.py --outside {args.outside}`. Connections from inside each pod",
+            f"Namespace `{ns}`; `scripts/check_netpol.py --egress {args.egress} --outside {args.outside}`.",
+            "Connections from inside each pod",
             "to the Services' cluster IPs; probe pods carry the labels of the jobs and the test pod.",
             "",
             "| From | To | Expected | Seen | |",

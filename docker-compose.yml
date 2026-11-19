@@ -128,6 +128,23 @@ services:
       start_period: 300s
       start_interval: 5s
 
+  # IaC control plane only (Terraform envs/local and the CI plan gate, D39, D48). Not part of the app's lab; same
+  # port as the other projects' floci-az: run one at a time. No docker.sock: registries and clusters stay mocked.
+  floci-az:
+    image: floci/floci-az:0.16.0@sha256:f9d7552c9c02be84f12e266d6201ff52c1f23421af94943cbf687526ded89790
+    profiles: ["iac"]
+    container_name: voice-floci-az
+    restart: unless-stopped
+    environment:
+      FLOCI_AZ_TLS_ENABLED: "true" # azurerm talks HTTPS only (scripts/trust-floci-cert.sh)
+      FLOCI_AZ_STORAGE_MODE: persistent
+      FLOCI_AZ_SERVICES_ACR_MOCKED: "true" # no registry container per registry
+      FLOCI_AZ_SERVICES_AKS_MOCKED: "true" # no k3s container per cluster
+    volumes:
+      - ./data/floci:/app/data
+    ports:
+      - "127.0.0.1:4577:4577" # ARM + data planes
+
 volumes:
   ollama:
   models:

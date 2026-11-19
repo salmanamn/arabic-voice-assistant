@@ -5,6 +5,7 @@ images:
   registry: "" # empty: images loaded into minikube from Docker Desktop (`minikube image load`); M6: ghcr.io/salmanamn
   tag: local
   pullPolicy: IfNotPresent # never Always for :local - there is no registry to pull from
+  digests: {} # name -> sha256:...: that image by digest instead of :tag (AKS: from ACR, set by scripts/aks-deploy.sh, D38)
   ollama: ollama/ollama:0.40.15@sha256:0e59999e0e8f9fd4e704bd788a89b7e4cad399367fb1365f8c102ac662288761
 
 # Speech models (D20, D24): one Job downloads and checks them into the volume (the only writer); the stt and tts
@@ -59,9 +60,29 @@ ollama:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 1Gi }
 
+# Chat on Azure OpenAI instead of Ollama (AKS, D45): no Ollama is deployed, and the gateway signs in with its
+# workload identity (service account `gateway`). deploy/azure-values.yaml and scripts/aks-deploy.sh set these.
+azureOpenAI:
+  enabled: false
+  endpoint: "" # https://<account>.openai.azure.com/openai/v1/
+  deployment: "" # the deployment name the gateway sends as `model`
+  reasoningEffort: "" # reasoning models (gpt-5.x): low
+  maxTokens: 160 # for a reasoning model its hidden reasoning tokens count against this too
+  clientId: "" # client id of the gateway's managed identity
+
 network:
-  # Egress of the two jobs that download models. NetworkPolicy has no host names: public addresses on 443,
-  # nothing inside the cluster or the private ranges (D29).
+  # cidr: the download jobs reach public addresses on 443 (NetworkPolicy has no host names, D29).
+  # fqdn: the download jobs (and with Azure OpenAI the gateway) reach named hosts only (CiliumNetworkPolicy, D44).
+  egress: cidr
+  fqdn:
+    modelHosts: # Hugging Face's API, its CDNs and the Xet bridge that serves large files
+      - huggingface.co
+      - "*.hf.co"
+      - "*.xethub.hf.co"
+      - "*.*.cdn.hf.co"
+    entraHost: login.microsoftonline.com
+  # Egress of the two jobs that download models (egress cidr). NetworkPolicy has no host names: public addresses on
+  # 443, nothing inside the cluster or the private ranges (D29).
   modelHosts:
     ports: [443]
     cidrs:

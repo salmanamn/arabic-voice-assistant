@@ -1,11 +1,13 @@
 """Pin every image this repository pulls to a digest, so a tag that moves cannot change what is built or run (D19).
 
-uv run python scripts/pin_images.py            ask the registries for each tag's digest and write tag@sha256:... back
-uv run python scripts/pin_images.py --check    no network: exit 1 if an image is not pinned
+uv run python scripts/pin_images.py                 ask the registries for each tag's digest and write it back
+uv run python scripts/pin_images.py --only REPO     the same for one repository (e.g. floci/floci-az), nothing else
+uv run python scripts/pin_images.py --check         no network: exit 1 if an image is not pinned
 
-Three kinds of line are handled: `ARG <NAME>_IMAGE=<image>` in Dockerfile (the base images), `image: <image>` in
-docker-compose.yml, and the `ollama:` image in the chart's values.yaml. Images tagged `:local` are the ones this
-repository builds; they are left alone. --check also fails when compose and the chart pin different Ollama images.
+Four kinds of line are handled: `ARG <NAME>_IMAGE=<image>` in Dockerfile (the base images), `image: <image>` in
+docker-compose.yml and in the CI workflow's service containers, and the `ollama:` image in the chart's values.yaml.
+Images tagged `:local` are the ones this repository builds; they are left alone. --check also fails when two files
+pin different references of the same repository (compose and the chart for Ollama, compose and CI for floci-az).
 CI runs the resolving mode weekly and fails when a tag has moved (D36): the stand-in for Dependabot, which does not
 read `ARG` defaults.
 Run it again to move to the newest digest of the same tags, then rebuild and scan before committing.
@@ -22,6 +24,7 @@ FILES = {
     "Dockerfile": re.compile(r"^(ARG \w+_IMAGE=)(\S+)$", re.MULTILINE),
     "docker-compose.yml": re.compile(r"^(\s*image: )(\S+)", re.MULTILINE),
     "deploy/charts/voice/values.yaml": re.compile(r"^(  ollama: )(\S+)$", re.MULTILINE),
+    ".github/workflows/ci.yml": re.compile(r"^(\s+image: )(\S+)", re.MULTILINE),
 }
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -50,6 +53,7 @@ def resolve(tagged: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="only check that every image is pinned")
+    parser.add_argument("--only", metavar="REPO", help="resolve only this repository (e.g. floci/floci-az)")
     args = parser.parse_args()
 
     unpinned = 0
@@ -61,13 +65,17 @@ def main() -> int:
             tagged, old = split(match.group(2))
             if tagged.endswith(":local"):
                 continue
-            seen.setdefault(tagged.split(":")[0], set()).add(match.group(2))
+            if args.only and tagged.split(":")[0] != args.only:
+                seen.setdefault(tagged.split(":")[0], set()).add(match.group(2))
+                continue
             if args.check:
+                seen.setdefault(tagged.split(":")[0], set()).add(match.group(2))
                 state = "pinned" if DIGEST.match(old) else "NOT PINNED"
                 unpinned += state != "pinned"
                 print(f"{state:10} {name}: {tagged} {old[:19]}")
                 continue
             new = resolve(tagged)
+            seen.setdefault(tagged.split(":")[0], set()).add(f"{tagged}@{new}")  # what the file holds after this run
             state = "unchanged" if new == old else ("moved" if old else "pinned")
             print(f"{state:10} {name}: {tagged}@{new}")
             text = text.replace(match.group(0), f"{match.group(1)}{tagged}@{new}", 1)

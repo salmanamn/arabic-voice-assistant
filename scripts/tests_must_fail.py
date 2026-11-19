@@ -1,11 +1,13 @@
 """Tests must fail: apply known-bad changes one at a time and require the unit tests to catch each one.
 
 Each mutation breaks one property the project depends on: only locked model bytes, a read-only check that changes
-nothing, downloads that resume, one model call at a time with a bounded queue, input limits, errors and logs that
-never echo what was said, a new connection per speech call, threads from physical cores, the request shape for
-reasoning models, text cleaned before it is spoken. The script works on a temporary copy of the repository, so the
-working tree is never changed. Exit 1 when a mutation survives (the tests still pass), when its anchor text is no
-longer in the code (update the mutation together with the code), or when the clean copy fails (D35).
+nothing, downloads that resume and name the host they failed on, one model call at a time with a bounded queue,
+input limits, errors and logs that never echo what was said, a new connection per speech call, threads from
+physical cores, the request shape for reasoning models, Entra ID tokens instead of keys on Azure, text cleaned
+before it is spoken, and Terraform that agrees with the chart (D48). The script works on a temporary copy of the
+repository, so the working tree is never changed. Exit 1 when a mutation survives (the tests still pass), when its
+anchor text is no longer in the code (update the mutation together with the code), or when the clean copy fails
+(D35).
 
 Usage: uv run python scripts/tests_must_fail.py [--only NAME] [--list]
 """
@@ -21,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-COPY = ("src", "tests", "eval", "pyproject.toml", "models.lock.json")
+COPY = ("src", "tests", "eval", "infra", "deploy", "scripts", "pyproject.toml", "models.lock.json")
 SUMMARY = re.compile(r"(\d+) failed")
 
 
@@ -154,11 +156,62 @@ MUTATIONS = [
         "if False:",
         "tests/unit/test_llm.py",
     ),
+    Mutation(
+        "entra-falls-back-to-the-key",
+        "src/voice/llm.py",
+        'if settings.openai_auth != "entra":',
+        "if True:",
+        "tests/unit/test_llm.py",
+    ),
+    Mutation(
+        "unknown-auth-accepted",
+        "src/voice/settings.py",
+        "    if auth not in OPENAI_AUTH:",
+        "    if False:",
+        "tests/unit/test_settings.py",
+    ),
+    Mutation(
+        "failed-host-unnamed",
+        "src/voice/download.py",
+        "                    host = exc.request.url.host",
+        "                    pass",
+        "tests/unit/test_download.py",
+    ),
+    Mutation(
+        "terraform-cluster-version-drift",
+        "infra/modules/stack/variables.tf",
+        '  default     = "1.37"',
+        '  default     = "1.38"',
+        "tests/unit/test_infra_contract.py",
+    ),
+    Mutation(
+        "terraform-service-account-drift",
+        "infra/modules/stack/variables.tf",
+        '  default     = "gateway"',
+        '  default     = "voice-gateway"',
+        "tests/unit/test_infra_contract.py",
+    ),
+    Mutation(
+        "terraform-chat-model-drift",
+        "infra/modules/stack/variables.tf",
+        '    model    = "gpt-5.4-mini"',
+        '    model    = "gpt-5.6-terra"',
+        "tests/unit/test_infra_contract.py",
+    ),
 ]
 
 
 def make_copy(dest: Path) -> None:
-    ignore = shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc")
+    ignore = shutil.ignore_patterns(
+        "__pycache__",
+        ".pytest_cache",
+        "*.pyc",
+        ".terraform*",
+        "*.tfstate*",
+        "*.tfplan",
+        "plan.json",
+        "terraform.tfvars",
+    )
     for name in COPY:
         src = ROOT / name
         if src.is_dir():

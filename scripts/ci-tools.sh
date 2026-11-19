@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pinned tools for CI (D36), each checked against a SHA-256 before it is installed into ~/.local/bin.
-#   ./scripts/ci-tools.sh helm conftest trivy k3s
-# Conftest's, Trivy's and k3s's checksums are written here (taken from their GitHub releases); Helm publishes its
+#   ./scripts/ci-tools.sh helm conftest trivy k3s kubelogin
+# Conftest's, Trivy's, k3s's and kubelogin's checksums are written here (taken from their GitHub releases); Helm publishes its
 # binaries only on get.helm.sh, so its checksum file comes from there too (catches a broken download, not a
 # compromised release; same caveat as D22). Bump a version: change it and its checksum together.
 set -euo pipefail
@@ -12,6 +12,8 @@ TRIVY_VERSION=0.76.2
 TRIVY_SHA256=bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
 K3S_VERSION=v1.37.2+k3s1
 K3S_SHA256=265b3ee6a3198ef14033c63ef46cbb32370d83795199fb6d1b01f21575eddbda
+KUBELOGIN_VERSION=v0.2.22 # Entra ID sign-in for kubectl on AKS (local accounts are off, D41)
+KUBELOGIN_SHA256=716cbcb1880bca8f0e976b8917d06fcfe04de2c1e737eaaabbb26e2782330119
 
 bin=${CI_TOOLS_BIN:-$HOME/.local/bin}
 mkdir -p "$bin"
@@ -44,6 +46,10 @@ for tool in "$@"; do
     k3s)
       fetch "https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION//+/%2B}/k3s" "$K3S_SHA256" k3s
       install -m 0755 "$work/k3s" "$bin/k3s"
+      ;;
+    kubelogin)
+      fetch "https://github.com/Azure/kubelogin/releases/download/$KUBELOGIN_VERSION/kubelogin-linux-amd64.zip" "$KUBELOGIN_SHA256" kubelogin.zip
+      unzip -q -j "$work/kubelogin.zip" bin/linux_amd64/kubelogin -d "$work" && install -m 0755 "$work/kubelogin" "$bin/kubelogin"
       ;;
     *)
       echo "unknown tool: $tool" >&2

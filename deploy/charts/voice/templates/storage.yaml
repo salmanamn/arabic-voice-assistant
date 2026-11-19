@@ -1,5 +1,5 @@
-# Two volumes on the node's disk. ReadWriteOnce: the writer (a job) and the readers run on the same minikube node.
-# On AKS (M7) a disk attaches to one node at a time: one node pool, or Azure Files for ReadOnlyMany.
+# Volumes on the node's disk. ReadWriteOnce: the writer (a job) and the readers run on the same node. On AKS a
+# disk attaches to one node at a time, so the cluster has a single node (D43); Azure Files was not chosen.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -12,7 +12,7 @@ spec:
   resources:
     requests:
       storage: {{ .Values.models.storage }}
-{{- if not .Values.ollama.fake }}
+{{- if not (or .Values.ollama.fake .Values.azureOpenAI.enabled) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -26,4 +26,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.ollama.storage }}
-{{- end }}
+{{- end -}}

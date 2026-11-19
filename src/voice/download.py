@@ -9,6 +9,7 @@ in a row that added nothing. The `.part` file lives next to the target on the mo
 it too. The caller checks the finished file against the lock; this module only moves bytes (D33).
 """
 
+import contextlib
 import os
 import time
 from collections.abc import Callable
@@ -59,8 +60,10 @@ def resumable_get(
         if have:
             headers["Range"] = f"bytes={have}-"
         started, last_report, wrote = clock(), clock(), 0
+        host = httpx.URL(url).host  # the host this attempt last talked to: a blocked one is named in the log (D44)
         try:
             with client.stream("GET", url, headers=headers) as response:
+                host = response.url.host  # after redirects: the CDN that serves the bytes
                 if response.status_code == 416 and have:  # asked past the end: the part file is already complete or bad
                     part.unlink()
                     continue
@@ -87,15 +90,21 @@ def resumable_get(
         except (httpx.TransportError, DownloadError) as exc:
             if isinstance(exc, DownloadError) and "from the model host" in str(exc):
                 raise
+            if isinstance(exc, httpx.TransportError):
+                with contextlib.suppress(RuntimeError):  # no request attached (should not happen with stream)
+                    host = exc.request.url.host
             stalls = 0 if wrote else stalls + 1
             if stalls >= max_stalls:
                 raise DownloadError(
-                    f"{target.name}: {stalls} attempts in a row added nothing ({type(exc).__name__}: {exc}); "
+                    f"{target.name}: {stalls} attempts in a row added nothing ({host}: {type(exc).__name__}: {exc}); "
                     f"{part.stat().st_size if part.exists() else 0} bytes kept in {part.name} for the next run"
                 ) from exc
             wait = min(60.0, 5.0 * 2**stalls)
             size = part.stat().st_size if part.exists() else 0
-            log(f"  {target.name}: attempt {attempt} stopped at {size / 1e6:.0f} MB ({exc}); resuming in {wait:.0f} s")
+            log(
+                f"  {target.name}: attempt {attempt} stopped at {size / 1e6:.0f} MB ({host}: {exc}); "
+                f"resuming in {wait:.0f} s"
+            )
             sleep(wait)
     os.replace(part, target)
     return target
