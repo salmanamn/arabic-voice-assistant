@@ -7,215 +7,217 @@ name: deploy
 #                 -> deploy-chart: approval -> CI's tested images to ACR -> helm upgrade on AKS -> helm test and
 #                    every network flow (id-slz-apply: Contributor on the subscription, AKS RBAC Cluster Admin, D46)
 on:
-    pull_request:
-        branches: [main]
-        paths:
-            - "infra/**"
-            - "deploy/**"
-            - ".github/workflows/deploy.yml"
-            - "scripts/aks-deploy.sh"
-            - "scripts/az-login-oidc.sh"
-    workflow_dispatch:
-        inputs:
-            action:
-                description: "What to do to the Azure lab"
-                type: choice
-                options: [apply, destroy, deploy-chart]
-                default: apply
-            images_run:
-                description: "deploy-chart: the ci.yml run whose images to deploy (empty = last green push to main)"
-                type: string
-                default: ""
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "deploy/**"
+      - ".github/workflows/deploy.yml"
+      - "scripts/aks-deploy.sh"
+      - "scripts/az-login-oidc.sh"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do to the Azure lab"
+        type: choice
+        options: [apply, destroy, deploy-chart]
+        default: apply
+      images_run:
+        description: "deploy-chart: the ci.yml run whose images to deploy (empty = last green push to main)"
+        type: string
+        default: ""
 
 permissions:
-    contents: read
+  contents: read
 
 concurrency:
-    group: tfstate-voice-azure
-    cancel-in-progress: false
+  group: tfstate-voice-azure
+  cancel-in-progress: false
 
 env:
-    TF_VERSION: "1.17.1"
-    TF_IN_AUTOMATION: "true"
-    TF_INPUT: "false"
-    ARM_USE_OIDC: "true"
-    ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-    ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    TF_VAR_operator_object_id: ${{ vars.OPERATOR_OBJECT_ID }}
-    TF_VAR_deployer_object_id: ${{ vars.APPLY_PRINCIPAL_ID }}
-    RESOURCE_GROUP: rg-voice-azure
+  TF_VERSION: "1.17.1"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  ARM_USE_OIDC: "true"
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_operator_object_id: ${{ vars.OPERATOR_OBJECT_ID }}
+  TF_VAR_deployer_object_id: ${{ vars.APPLY_PRINCIPAL_ID }}
+  RESOURCE_GROUP: rg-voice-azure
 
 jobs:
-    plan:
-        # Dependabot runs get no repo secrets -> OIDC init fails. deploy-chart needs no plan.
-        if: github.actor != 'dependabot[bot]' && (github.event_name == 'pull_request' || inputs.action != 'deploy-chart')
-        runs-on: ubuntu-24.04
-        timeout-minutes: 20
-        permissions:
-            contents: read
-            id-token: write
+  plan:
+    # Dependabot runs get no repo secrets -> OIDC init fails. deploy-chart needs no plan.
+    if: github.actor != 'dependabot[bot]' && (github.event_name == 'pull_request' || inputs.action != 'deploy-chart')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_PLAN }}
+    defaults:
+      run:
+        working-directory: infra/envs/azure
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Install Conftest
+        working-directory: .
+        run: ./scripts/ci-tools.sh conftest
+
+      - name: terraform init
+        run: terraform init -backend-config=backend.hcl
+
+      - name: terraform plan
+        id: plan
+        run: |
+          set +e
+          terraform plan ${{ inputs.action == 'destroy' && '-destroy' || '' }} \
+            -lock-timeout=5m -detailed-exitcode -out=tfplan
+          code=$?
+          set -e
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      # The plan that will be applied passes the same policies as the floci-az plan in ci.yml (D48).
+      - name: Policy gate on this exact plan
+        if: inputs.action != 'destroy'
+        run: |
+          set -o pipefail
+          terraform show -json tfplan > plan.json
+          conftest test --no-color --policy ../../policy plan.json | grep -E "^FAIL|tests,"
+          rm -f plan.json
+
+      - name: Plan summary
+        run: |
+          {
+            echo "### terraform plan (${{ inputs.action || 'pull_request' }})"
+            echo '```'
+            terraform show -no-color tfplan | grep -E '^  # |^Plan:|^No changes' | sed "s/${ARM_SUBSCRIPTION_ID}/***/g"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Encrypt plan
+        if: github.event_name == 'workflow_dispatch' && steps.plan.outputs.changes == 'true'
         env:
-            ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_PLAN }}
-        defaults:
-            run:
-                working-directory: infra/envs/azure
-        outputs:
-            changes: ${{ steps.plan.outputs.changes }}
-        steps:
-            - uses: actions/checkout@v7
-              with:
-                  persist-credentials: false
+          TF_PLAN_KEY: ${{ secrets.TF_PLAN_KEY }}
+        run: openssl enc -aes-256-cbc -pbkdf2 -salt -in tfplan -out tfplan.enc -pass env:TF_PLAN_KEY
 
-            - uses: hashicorp/setup-terraform@v4
-              with:
-                  terraform_version: ${{ env.TF_VERSION }}
-                  terraform_wrapper: false
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch' && steps.plan.outputs.changes == 'true'
+        with:
+          name: tfplan
+          path: infra/envs/azure/tfplan.enc
+          retention-days: 1
 
-            - name: Install Conftest
-              working-directory: .
-              run: ./scripts/ci-tools.sh conftest
+  apply:
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.changes == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: azure
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_APPLY }}
+    defaults:
+      run:
+        working-directory: infra/envs/azure
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-            - name: terraform init
-              run: terraform init -backend-config=backend.hcl
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
-            - name: terraform plan
-              id: plan
-              run: |
-                  set +e
-                  terraform plan ${{ inputs.action == 'destroy' && '-destroy' || '' }} \
-                    -lock-timeout=5m -detailed-exitcode -out=tfplan
-                  code=$?
-                  set -e
-                  if [ "$code" -eq 1 ]; then exit 1; fi
-                  echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: terraform init
+        run: terraform init -backend-config=backend.hcl
 
-            # The plan that will be applied passes the same policies as the floci-az plan in ci.yml (D48).
-            - name: Policy gate on this exact plan
-              if: inputs.action != 'destroy'
-              run: |
-                  set -o pipefail
-                  terraform show -json tfplan > plan.json
-                  conftest test --no-color --policy ../../policy plan.json | grep -E "^FAIL|tests,"
-                  rm -f plan.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: tfplan
+          path: infra/envs/azure
 
-            - name: Plan summary
-              run: |
-                  {
-                    echo "### terraform plan (${{ inputs.action || 'pull_request' }})"
-                    echo '```'
-                    terraform show -no-color tfplan | grep -E '^  # |^Plan:|^No changes' | sed "s/${ARM_SUBSCRIPTION_ID}/***/g"
-                    echo '```'
-                  } >> "$GITHUB_STEP_SUMMARY"
-
-            - name: Encrypt plan
-              if: github.event_name == 'workflow_dispatch' && steps.plan.outputs.changes == 'true'
-              env:
-                  TF_PLAN_KEY: ${{ secrets.TF_PLAN_KEY }}
-              run: openssl enc -aes-256-cbc -pbkdf2 -salt -in tfplan -out tfplan.enc -pass env:TF_PLAN_KEY
-
-            - uses: actions/upload-artifact@v7
-              if: github.event_name == 'workflow_dispatch' && steps.plan.outputs.changes == 'true'
-              with:
-                  name: tfplan
-                  path: infra/envs/azure/tfplan.enc
-                  retention-days: 1
-
-    apply:
-        needs: plan
-        if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.changes == 'true'
-        runs-on: ubuntu-24.04
-        timeout-minutes: 60
-        environment: azure
-        permissions:
-            contents: read
-            id-token: write
+      - name: Decrypt plan
         env:
-            ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_APPLY }}
-        defaults:
-            run:
-                working-directory: infra/envs/azure
-        steps:
-            - uses: actions/checkout@v7
-              with:
-                  persist-credentials: false
+          TF_PLAN_KEY: ${{ secrets.TF_PLAN_KEY }}
+        run: openssl enc -d -aes-256-cbc -pbkdf2 -in tfplan.enc -out tfplan -pass env:TF_PLAN_KEY
 
-            - uses: hashicorp/setup-terraform@v4
-              with:
-                  terraform_version: ${{ env.TF_VERSION }}
-                  terraform_wrapper: false
+      - name: terraform apply (${{ inputs.action }})
+        run: terraform apply -lock-timeout=5m tfplan
 
-            - name: terraform init
-              run: terraform init -backend-config=backend.hcl
+      # AKS deletes its node resource group (VM scale set, disks of the PVCs, load balancer, public IP) itself.
+      - name: Both resource groups are gone
+        if: inputs.action == 'destroy'
+        working-directory: .
+        run: |
+          ./scripts/az-login-oidc.sh
+          for rg in "$RESOURCE_GROUP" "$RESOURCE_GROUP-nodes"; do
+            test "$(az group exists --name "$rg")" = false && echo "OK   $rg deleted"
+          done
 
-            - uses: actions/download-artifact@v8
-              with:
-                  name: tfplan
-                  path: infra/envs/azure
+  deploy-chart:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'deploy-chart'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: azure
+    permissions:
+      contents: read
+      id-token: write
+      actions: read # download ci.yml's images artifact
+      packages: read # read the gateway and models images on GHCR
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_APPLY }}
+      GH_TOKEN: ${{ github.token }}
+      IMAGES_RUN: ${{ inputs.images_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-            - name: Decrypt plan
-              env:
-                  TF_PLAN_KEY: ${{ secrets.TF_PLAN_KEY }}
-              run: openssl enc -d -aes-256-cbc -pbkdf2 -in tfplan.enc -out tfplan -pass env:TF_PLAN_KEY
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false # clean `terraform output -json`
 
-            - name: terraform apply (${{ inputs.action }})
-              run: terraform apply -lock-timeout=5m tfplan
+      - name: Install Helm and kubelogin (pinned, checksum-verified)
+        run: ./scripts/ci-tools.sh helm kubelogin
 
-            # AKS deletes its node resource group (VM scale set, disks of the PVCs, load balancer, public IP) itself.
-            - name: Both resource groups are gone
-              if: inputs.action == 'destroy'
-              working-directory: .
-              run: |
-                  ./scripts/az-login-oidc.sh
-                  for rg in "$RESOURCE_GROUP" "$RESOURCE_GROUP-nodes"; do
-                    test "$(az group exists --name "$rg")" = false && echo "OK   $rg deleted"
-                  done
+      - name: Sign the Azure CLI in with OIDC
+        run: ./scripts/az-login-oidc.sh
 
-    deploy-chart:
-        if: github.event_name == 'workflow_dispatch' && inputs.action == 'deploy-chart'
-        runs-on: ubuntu-24.04
-        timeout-minutes: 45
-        environment: azure
-        permissions:
-            contents: read
-            id-token: write
-            actions: read # download ci.yml's images artifact
-            packages: read # read the gateway and models images on GHCR
-        env:
-            ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_APPLY }}
-            GH_TOKEN: ${{ github.token }}
-            IMAGES_RUN: ${{ inputs.images_run }}
-        steps:
-            - uses: actions/checkout@v7
-              with:
-                  persist-credentials: false
+      - name: Chart settings from Terraform's output
+        run: terraform -chdir=infra/envs/azure init -backend-config=backend.hcl >/dev/null && ./scripts/aks-deploy.sh settings
 
-            - uses: hashicorp/setup-terraform@v4
-              with:
-                  terraform_version: ${{ env.TF_VERSION }}
-                  terraform_wrapper: false # clean `terraform output -json`
+      # GitHub's OIDC token lives about 5 minutes, and the az CLI keeps it to ask Entra ID for tokens of other
+      # resources later (ACR, the AKS API): sign in again right before each step that needs a new one (D51).
+      - name: Images to ACR (stt/tts from CI's artifact, gateway/models from GHCR by digest)
+        run: ./scripts/az-login-oidc.sh && ./scripts/aks-deploy.sh images "$IMAGES_RUN"
 
-            - name: Install Helm and kubelogin (pinned, checksum-verified)
-              run: ./scripts/ci-tools.sh helm kubelogin
+      - name: Cluster credentials (Entra ID through kubelogin)
+        run: ./scripts/az-login-oidc.sh && ./scripts/aks-deploy.sh credentials
 
-            - name: Sign the Azure CLI in with OIDC
-              run: ./scripts/az-login-oidc.sh
+      - name: helm upgrade --install
+        run: ./scripts/aks-deploy.sh install
 
-            - name: Chart settings from Terraform's output
-              run: terraform -chdir=infra/envs/azure init -backend-config=backend.hcl >/dev/null && ./scripts/aks-deploy.sh settings
+      - name: One spoken turn (real Azure OpenAI), then every network flow
+        run: ./scripts/aks-deploy.sh test && cat "$RUNNER_TEMP/voice-aks/netpol.md" >> "$GITHUB_STEP_SUMMARY"
 
-            - name: Images to ACR (stt/tts from CI's artifact, gateway/models from GHCR by digest)
-              run: ./scripts/aks-deploy.sh images "$IMAGES_RUN"
-
-            - name: Cluster credentials (Entra ID through kubelogin)
-              run: ./scripts/aks-deploy.sh credentials
-
-            - name: helm upgrade --install
-              run: ./scripts/aks-deploy.sh install
-
-            - name: One spoken turn (real Azure OpenAI), then every network flow
-              run: ./scripts/aks-deploy.sh test && cat "$RUNNER_TEMP/voice-aks/netpol.md" >> "$GITHUB_STEP_SUMMARY"
-
-            - name: Cluster state
-              if: failure()
-              run: ./scripts/aks-deploy.sh logs
+      - name: Cluster state
+        if: failure()
+        run: ./scripts/aks-deploy.sh logs
