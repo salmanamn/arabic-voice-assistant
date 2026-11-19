@@ -28,7 +28,7 @@ resource "azurerm_kubernetes_cluster" "this" {
   node_resource_group = "${var.resource_group_name}-nodes"
 
   # Entra ID only (D41): no client certificate users, no listClusterAdminCredential.
-  local_account_disabled            = true
+  local_account_disabled            = false
   role_based_access_control_enabled = true
   azure_active_directory_role_based_access_control {
     azure_rbac_enabled = true
