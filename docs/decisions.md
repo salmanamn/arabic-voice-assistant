@@ -229,3 +229,102 @@
 - `publish` runs after all six checks on a push to `main`, loads the tested artifact and pushes `ghcr.io/salmanamn/voice-gateway` and `voice-models` as `sha-<12 characters of the commit>` and `main`, with the job's own token; the job summary lists each image by digest. `stt` and `tts` are not pushed until the licence is decided (D23).
 - The Dockerfile's `org.opencontainers.image.source` label links the packages to the repository. GHCR creates a new package as private; it was made public by hand once (package settings), because the plan is anonymous pulls (D23). After that, pushes keep the visibility.
 - What a cluster runs is chosen by digest, not by `main` (M7). The `main` tag is a convenience for a human, never a deployment reference.
+
+## D38 — Images on AKS: CI's tested bytes, by digest, from the stack's ACR (updates D23 and D32)
+- AKS pulls every image from an ACR Basic created with the stack (`acrvoiceazure<suffix>`, admin user off, anonymous pull off), with the kubelet identity's `AcrPull` on that registry only. No pull secret; the kubelet authenticates with its managed identity.
+- `gateway` and `models`: `az acr import` from GHCR **by digest**. The digest is the one `publish` pushed for the chosen commit (`sha-<12>`), read with `docker buildx imagetools inspect`.
+- `stt` and `tts`: the licence is still open (D23), so they have no public package. The deploy job downloads the `images` artifact of the chosen `ci.yml` run (the same file `e2e` tested and `publish` loaded), loads it and pushes the two images to ACR. A private registry of the owner's own subscription does not distribute them. On pushes to `main` the artifact is now kept 30 days (PRs: 1 day), so a deploy can use any green `main` commit of the last month.
+- The chart pulls by digest only (`images.digests`; Conftest denies a registry image without one). `scripts/aks-deploy.sh images` reads each digest back from ACR after the push or import, so the values describe what the registry actually holds.
+- D23's plan holds for `gateway` and `models`. D32's Azure values file is `deploy/azure-values.yaml`; CI renders it together with made-up registry values (`deploy/policy/fixtures/azure-render.yaml`), because the real ones exist only while the stack is up.
+- When the licence is decided: add `stt tts` to `PUBLISH` in `ci.yml`, then import all four from GHCR. That is a one-line change in `aks-deploy.sh` (the `for i in stt tts` push loop goes).
+
+## D39 — floci-az stays at 0.16.0
+- 0.17.0 (2026-11-15) stores role assignments and lists deleted workspaces, but it changes TLS handling and isn't the version CI has proven. 0.16.0 is pinned by digest in compose and in CI's service container (`scripts/pin_images.py --only floci/floci-az`).
+- What 0.16.0 does with this stack (read in its source): resource groups, user-assigned identities, federated credentials (201/200), ACR (mocked: no registry behind it) and diagnostic settings are created and destroyed. AKS is mocked and stores no identity, OIDC issuer or AAD profile, so a refresh after apply would drift. Role assignments answer 404, and there is no Cognitive Services handler.
+- So `envs/local` applies a subset (resource group, gateway identity, random suffix, ACR, ACR diagnostics: 5) and plans the full stack (16, with placeholder operator and deployer ids) for the gate. The apply is a laptop step (`./scripts/iac.sh apply-local`); CI only plans.
+
+## D40 — Terraform layout: the same as ticket-triage-agent
+- `infra/modules/{aks,registry,openai,stack}`, `infra/envs/local` (floci-az, local state) and `infra/envs/azure` (remote state in Project 1's `stslztfstatet8trox`, container `tfstate`, key `arabic-voice-assistant-azure.tfstate`). `stack` is the composition root; the two envs differ only in provider config and inputs. `components {aks, openai, rbac}` turn off what floci-az can't create.
+- Providers: azurerm `~> 4.81`, random `~> 3.7`, Terraform 1.17.1. envs/azure registers nothing (`resource_provider_registrations = "none"`) and checks nine providers: Authorization, CognitiveServices, Compute, ContainerRegistry, ContainerService, Insights, ManagedIdentity, Network, OperationalInsights. `prevent_deletion_if_contains_resources = true`; Cognitive accounts are purged on destroy.
+- Checks: `terraform fmt`, `validate` for both envs, Checkov 3.4.3 per root (every skip carries its reason), 25 Conftest rules with 27 unit tests, and `scripts/iac_must_fail.py` (24 mutations of the full local plan, each must be denied).
+
+## D41 — The cluster
+- AKS 1.37 (GA, LTS), Free control-plane tier, node resource group `rg-voice-azure-nodes`.
+- Microsoft Entra ID with Azure RBAC for Kubernetes and **local accounts disabled**: every kubectl call is an Entra identity with an Azure role; there is no admin kubeconfig (`listClusterAdminCredential` fails). kubectl signs in through kubelogin (`convert-kubeconfig -l azurecli`, v0.2.22, checksum in `ci-tools.sh`).
+- OIDC issuer and workload identity on (D45). `run_command` off. Automatic upgrades: `patch` for Kubernetes, `NodeImage` for the node OS.
+- Azure CNI overlay, Cilium dataplane and network policy, with Advanced Container Networking security (FQDN filtering, D44). Observability (Hubble metrics) off.
+- Public API server without authorized IP ranges: GitHub-hosted runners have no fixed addresses (Project 1 D14). Every call still needs Entra ID and a role.
+- No Container Insights, no Azure Policy add-on, no Key Vault provider: see D47; Gatekeeper is Project 7's subject.
+
+## D42 — One node: Standard_F8als_v6
+- 8 cores without SMT, 16 GiB, AMD, about $0.60 an hour in UAE North (third-party price lists; check the calculator). No ephemeral OS disk on this size, so the OS disk is a 64 GB managed disk. Fallback: Standard_F8as_v6 (same cores, 32 GiB, about $0.67/h).
+- `stt` asks for 2500m, which `STT_THREADS` rounds up to 3 threads (D26). Two replicas take 5 of the 8 cores; `tts` (500m), the gateway (100m) and the cluster's own pods (about 1 CPU of requests) fit beside them. `tests/unit/test_infra_contract.py` checks that `2 × ceil(stt cpu) ≤ node cores − 1`.
+- Quota: the Falsv6 family needs 8 cores in uaenorth (16 if a node-image upgrade surges a second node during the session). M7 Step 0 checks `az vm list-usage` and `az vm list-skus` (restrictions).
+
+## D43 — Storage: one node, one ReadWriteOnce Azure Disk
+- The `models` volume (1 GiB) stays ReadWriteOnce on AKS's default class (`managed-csi`, Standard SSD). The `models` Job writes it, then `stt` and `tts` mount it read-only. With one node, every pod can mount it.
+- Rejected: Azure Files. SMB needs the storage account's key in a secret (the stack has none); NFS needs a premium account with a private endpoint and a VNet. Both cost more than one small disk for a few hours.
+- The disk lives in the node resource group and goes with it on destroy.
+
+## D44 — Egress by host name: Cilium FQDN policies, not a firewall (updates D29)
+- On AKS the chart renders `network.egress: fqdn`. The model downloads (`models`, and `ollama-pull` where Ollama exists) and the gateway get no address rule. Each gets a CiliumNetworkPolicy instead: DNS to kube-dns, filtered to the allowed names, plus `toFQDNs` on TCP 443.
+- Hosts. Downloads: `huggingface.co`, `*.hf.co`, `*.xethub.hf.co`, `*.*.cdn.hf.co` (Hugging Face's API, LFS and Xet storage). Gateway: the Azure OpenAI account's host and `login.microsoftonline.com` (the workload identity token exchange). A universal `*` is refused by Conftest (and by ACNS).
+- Pods in fqdn mode use `ndots: 1`, so a name like `huggingface.co` is resolved as is, not first through the cluster's search domains (each of which the DNS policy would have to allow).
+- The Kubernetes NetworkPolicy no longer gives those pods DNS: Cilium merges an L4-only rule with the L7 DNS rule, and the DNS port would be open to every name.
+- A failed download now names the host it could not reach (`src/voice/download.py`), so a missing CDN name shows up in the Job's log rather than as a timeout.
+- `scripts/check_netpol.py --egress fqdn` checks 53 flows: every pod to every service, the downloads to a model host, the gateway to the chat host and to Entra ID, and every other pod to nothing outside.
+- D29's address rule ("public addresses on 443") stays for minikube and k3s (`network.egress: cidr`, the default).
+- Rejected: Azure Firewall, about $0.40–1.25 an hour plus a route table and a subnet for one lab session. ACNS costs about $0.025 per node-hour (third-party figure; Microsoft's page shows no price for UAE North).
+
+## D45 — The answer on Azure: Azure OpenAI with the gateway's workload identity
+- No Ollama on AKS: the chart renders no Ollama Deployment, Service, PVC or pull Job when `azureOpenAI.enabled`. The node would need 4.5 GB more memory for a slower answer.
+- Model: **gpt-5.4-mini 2026-03-17, GlobalStandard, 50k TPM**. It is GA, retires 2027-09-21, and was deployed on this subscription in Project 3. gpt-4.1-mini and gpt-4o-mini are Deprecated. The gpt-5.6 family exists but is newer than this runbook's checks. It is a reasoning model: `CHAT_REASONING_EFFORT=low`, `max_completion_tokens` 2000 (reasoning tokens count against it), no temperature (D17's code path).
+- Account `oai-voice-azure-<suffix>`: custom subdomain, local (key) auth off, outbound access restricted with an empty list, diagnostics to log-slz-platform.
+- Auth: `OPENAI_AUTH=entra`. The gateway gets a token for `https://cognitiveservices.azure.com/.default` from `DefaultAzureCredential`, which reads the projected service-account token workload identity injects. `azure-identity` 1.27 is in the gateway's dependency group only (`check_images.py`).
+- Identity: user-assigned `id-voice-azure-gateway`, with a federated credential for `system:serviceaccount:voice:gateway` on the cluster's issuer and `Cognitive Services OpenAI User` on the account. The ServiceAccount carries the client id. `automountServiceAccountToken: false`: the webhook still injects the Azure token, and the Kubernetes API token isn't mounted (untested before M8).
+- Conftest: the identity label and annotation only on the gateway; no `OPENAI_API_KEY` next to `entra`.
+
+## D46 — Roles
+- Every role is assigned at the narrowest scope and by id, never at resource-group or subscription scope:
+  - kubelet: `AcrPull` on the registry
+  - gateway identity: `Cognitive Services OpenAI User` on the account
+  - CI's apply identity (`APPLY_PRINCIPAL_ID`): `Azure Kubernetes Service RBAC Cluster Admin` on the cluster, to install the chart
+  - the operator (you): `Azure Kubernetes Service RBAC Admin` on `<cluster>/namespaces/voice` (no write on the namespace itself or its quotas) and `Cognitive Services OpenAI User` on the account
+- Project 1's bootstrap adds AcrPull and the two AKS roles to the apply identity's ABAC list (its D24). The plan identity's refresh role gets `listClusterUserCredential`: azurerm 4.80 calls it on every AKS read. With local accounts off, that kubeconfig holds no credential.
+- Pushing to ACR needs no extra role: a new registry uses "RBAC Registry Permissions" (legacy), where Contributor (the apply identity) pushes and pulls.
+- `az aks get-credentials` as the operator needs `listClusterUserCredential` on the cluster: the subscription owner has it. A non-owner operator would need Azure Kubernetes Service Cluster User Role as well.
+- Project 2's SLZ-010 fires on every apply and destroy (a federated credential is written on the gateway identity), and SLZ-001 on the bootstrap change: expected, the operator's own actions.
+
+## D47 — Diagnostics
+- Everything goes to log-slz-platform. AKS: `kube-audit-admin` and `guard` (Entra sign-ins), resource-specific tables (`Dedicated`), not the full `kube-audit` (every read). ACR and Azure OpenAI: `allLogs`.
+- No Container Insights: the agent and its data cost more than the session and add a DaemonSet to a full node. Pod logs: `kubectl logs`, and `aks-deploy.sh logs` when a deploy fails.
+
+## D48 — The infrastructure gate in CI
+- `ci.yml` gains `iac-static` (fmt, validate, Checkov, policy unit tests) and `iac-plan` (floci-az 0.16.0 as a service container, the full-stack plan of `envs/local`, Conftest, `iac_must_fail.py`). Both are required: `main` now waits for 8 checks (`scripts/protect-main.sh`).
+- `chart` renders a fourth set of values, the Azure values with the fixture, against the same 35 rules; `chart_must_fail.py` has 30 mutations (12 for the Azure rendering).
+- `tests_must_fail.py` copies `infra/`, `deploy/` and `scripts/` too, and has 23 mutations. Three of them change Terraform defaults (version, ServiceAccount, chat model) that `test_infra_contract.py` must catch.
+- `deploy.yml` plans `envs/azure` on every PR that touches infra or the chart (not a required check: Dependabot runs have no secrets).
+
+## D49 — Deploying to AKS: deploy.yml
+- `deploy.yml` has the same flow as Project 3:
+  - PR → plan (`id-slz-plan`) + Conftest on that exact plan.
+  - Dispatch `apply`/`destroy` → plan → gate → encrypted plan artifact → approval (environment `azure`) → apply of that exact plan (`id-slz-apply`). Destroy ends by checking that `rg-voice-azure` and `rg-voice-azure-nodes` are gone.
+  - Dispatch `deploy-chart` → approval → `scripts/aks-deploy.sh`:
+    - `settings`: the chart settings from the Terraform output
+    - `images`: D38
+    - `credentials`: `az aks get-credentials`, then kubelogin
+    - `install`: namespace, `helm upgrade --install --wait` with `deploy/azure-values.yaml` and the generated values
+    - `test`: `helm test`, a real turn against Azure OpenAI, then `check_netpol.py --egress fqdn`; the flow table goes to the job summary
+- The deploy job has `actions: read` (the artifact) and `packages: read` (GHCR) on top of `id-token: write`. `scripts/ci-deploy.sh apply | deploy-chart [RUN] | destroy` dispatches, shows the plan, approves and follows from the laptop.
+
+## D50 — Cost of a session
+- A 4-hour session costs about $3.2:
+  - node: about $0.60/h, so about $2.40
+  - ACNS: about $0.025/h, so $0.10
+  - Standard load balancer and its public IP: about $0.03/h, so $0.12
+  - OS disk (64 GB) and the models disk (1 GiB): a few cents
+  - ACR Basic: about $0.17 a day
+  - log ingestion: cents
+  - gpt-5.4-mini for a few dozen turns: cents
+  - AKS Free tier: no control-plane charge
+- Billing stops when the stack is destroyed (both resource groups). The lab budget is Project 1's (20 a month); check it before each apply.

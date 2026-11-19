@@ -1,0 +1,44 @@
+# The chart on AKS (M7/M8): one Standard_F8als_v6 node (8 cores without SMT, 16 GiB, D42), images by digest from the
+# stack's ACR (D38), Azure OpenAI instead of Ollama with the gateway's workload identity (D45), egress by host name
+# (Cilium, D44). scripts/aks-deploy.sh adds what only exists once the stack is up (registry, digests, endpoint,
+# client id), from the Terraform output and the registry:
+#   helm upgrade --install voice deploy/charts/voice -n voice -f deploy/azure-values.yaml --set ...
+images:
+  registry: "" # <acr>.azurecr.io (set by aks-deploy.sh)
+  tag: unused # every image is pulled by digest
+  digests: {} # stt, tts, gateway, models -> sha256:... (set by aks-deploy.sh from the registry)
+
+models:
+  names: [stt-small, tts-ar-kareem-medium]
+
+stt:
+  # 2500m rounds up to STT_THREADS=3 (D7, D26): two replicas use 6 of the 8 cores and leave room for the cluster's
+  # own pods (Cilium, CoreDNS, metrics-server, the CSI and workload identity pods: about 1 CPU of requests).
+  resources:
+    requests: { cpu: 2500m, memory: 1408Mi }
+    limits: { memory: 2048Mi }
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 2
+
+tts:
+  resources:
+    requests: { cpu: 500m, memory: 640Mi }
+    limits: { memory: 1024Mi }
+
+gateway:
+  resources:
+    requests: { cpu: 100m, memory: 128Mi } # + azure-identity
+    limits: { memory: 256Mi }
+
+azureOpenAI:
+  enabled: true
+  endpoint: "" # https://<account>.openai.azure.com/openai/v1/ (set by aks-deploy.sh)
+  deployment: gpt-5.4-mini # = the Terraform chat deployment name (tests/unit/test_infra_contract.py)
+  reasoningEffort: low # gpt-5.x reasoning models: no temperature, max_completion_tokens (D45)
+  maxTokens: 2000 # reasoning tokens count against it; the gateway cuts what it speaks at 600 characters (D13)
+  clientId: "" # the gateway identity's client id (set by aks-deploy.sh)
+
+network:
+  egress: fqdn

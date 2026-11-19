@@ -17,6 +17,9 @@ spec:
     spec:
       restartPolicy: Never
       {{- include "voice.podSecurity" . | nindent 6 }}
+      {{- if eq .Values.network.egress "fqdn" }}
+      {{- include "voice.fqdnDns" . | nindent 6 }}
+      {{- end }}
       containers:
         - name: fetch
           image: {{ include "voice.image" (dict "root" . "name" "models") }}
@@ -32,4 +35,4 @@ spec:
       volumes:
         - name: models
           persistentVolumeClaim: { claimName: models }
-        {{- include "voice.tmpVolume" . | nindent 8 }}
+        {{- include "voice.tmpVolume" . | nindent 8 -}}

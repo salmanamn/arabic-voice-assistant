@@ -5,8 +5,8 @@ uv run python scripts/check_images.py [--tag local] [--evidence docs/evidence/m4
 Per image (voice-stt, voice-tts, voice-gateway, voice-models, tag :local unless --tag; CI builds :ci):
 - the configured user is 10001:10001, and a process started in the image really runs with that uid;
 - no model file inside: /models is empty and no file anywhere has the name and size of a file in models.lock.json;
-- only its own packages: Piper only in tts (GPL, D3), CTranslate2/faster-whisper only in stt, the OpenAI client
-  only in gateway, the hub client only in stt (faster-whisper depends on it) and models, pip in none.
+- only its own packages: Piper only in tts (GPL, D3), CTranslate2/faster-whisper only in stt, the OpenAI client and
+  azure-identity only in gateway, the hub client only in stt (faster-whisper depends on it) and models, pip in none.
 Whether the root filesystem is read-only is a property of how a container is started (docker-compose.yml), not of
 the image; the runbook checks that on the running containers.
 Exit status 1 if any check fails. --evidence writes image ids, sizes and package counts to a Markdown file.
@@ -30,6 +30,7 @@ ONLY_IN = {
     "faster-whisper": {"stt"},
     "av": {"stt"},
     "openai": {"gateway"},
+    "azure-identity": {"gateway"},
     "huggingface-hub": {"stt", "models"},
     "pip": set(),
     "uv": set(),
@@ -39,6 +40,7 @@ NEEDED = {
     "faster-whisper": {"stt"},
     "piper-tts": {"tts"},
     "openai": {"gateway"},
+    "azure-identity": {"gateway"},
     "huggingface-hub": {"models"},
     "uvicorn": {"stt", "tts", "gateway"},
 }

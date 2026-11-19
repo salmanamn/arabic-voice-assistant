@@ -18,7 +18,7 @@ from pathlib import Path
 
 import openai
 
-from voice.llm import Assistant
+from voice.llm import Assistant, credential
 from voice.quality import answer_is_correct, percentile, split_spec
 from voice.settings import load
 from voice.textnorm import arabic_ratio, clean_for_speech
@@ -47,7 +47,7 @@ def evaluate(spec: str, cases: list[dict], settings) -> dict:
     model, effort = split_spec(spec)
     assistant = Assistant(
         base_url=settings.openai_base_url,
-        api_key=settings.openai_api_key,
+        api_key=credential(settings),
         model=model,
         max_tokens=settings.chat_max_tokens,
         reasoning_effort=effort,

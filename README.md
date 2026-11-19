@@ -1,8 +1,8 @@
 # arabic-voice-assistant
 
-A voice assistant that listens and answers in Arabic, built from open components: **faster-whisper** turns speech into text, an LLM writes a short answer, **Piper** speaks it. It runs first on a laptop, then as services on Kubernetes (minikube with Helm), then on AKS.
+A voice assistant that listens and answers in Arabic, built from open components: **faster-whisper** turns speech into text, an LLM writes a short answer, **Piper** speaks it. It runs on a laptop, as services on Kubernetes (minikube with Helm), and on AKS.
 
-**Status: M6 — CI on every change.** The four images are built, checked and scanned, the Helm chart is checked against a policy and installed on a k3s cluster for one spoken turn, known-bad changes must fail the tests and the policy, and `main` is protected. The gateway and model-fetch images are published to GHCR. Not on AKS yet.
+**Status: M7 — AKS in Terraform, behind a plan gate.** The Azure stack (AKS with Entra ID and workload identity, ACR, Azure OpenAI) is written as Terraform. CI plans it against an emulator and checks the plan against policies; known-bad infrastructure must be denied. The chart has Azure values: images by digest from ACR, the answer from Azure OpenAI, and egress by host name with Cilium. `deploy.yml` applies an approved, exact plan and installs the chart. The first real deployment is M8.
 
 ```
 browser (push to talk) ──POST /api/turn──▶ gateway :8080 ──▶ stt      POST /v1/audio/transcriptions  (faster-whisper)
@@ -14,7 +14,7 @@ browser (push to talk) ──POST /api/turn──▶ gateway :8080 ──▶ stt
 | Step | Component | Local | Planned on Azure |
 |---|---|---|---|
 | Speech to text | faster-whisper 1.2.1 (Whisper on CTranslate2), CPU, int8 | Whisper small (D16) | same container on AKS |
-| Answer | any OpenAI-compatible endpoint | Ollama, `phi4-mini:3.8b` (D17) | Azure OpenAI through workload identity |
+| Answer | any OpenAI-compatible endpoint | Ollama, `phi4-mini:3.8b` (D17) | Azure OpenAI `gpt-5.4-mini` through workload identity (D45) |
 | Text to speech | Piper 1.8.0, Arabic voice `ar_JO-kareem-medium` | same | same container on AKS |
 
 The speech services speak OpenAI's audio routes, so the gateway uses one `openai` client for all three steps and any of them can be replaced by a hosted service by changing a URL.
@@ -62,9 +62,29 @@ Needs minikube with Calico and metrics-server, kubectl and Helm 4; the images bu
 
 Then http://localhost:8080 as above. The first install downloads both models into the cluster (a Job each). What the chart adds to compose: a startup, readiness and liveness probe per service, CPU and memory requests, an autoscaler for `stt` (1–2 replicas), every pod non-root on a read-only filesystem under the restricted Pod Security Standard, and network policies that deny everything a turn does not need (`scripts/check_netpol.py` checks them from inside the pods).
 
+## Run it on AKS
+
+Terraform in `infra/` (modules `aks`, `registry`, `openai`, composed by `stack`; `envs/local` for the floci-az emulator, `envs/azure` with remote state). Everything goes through `deploy.yml` with GitHub OIDC; nothing is applied from the laptop:
+
+    ./scripts/ci-deploy.sh apply          # plan → policy gate → approve → apply that exact plan
+    ./scripts/ci-deploy.sh deploy-chart   # CI's tested images → ACR, helm upgrade, helm test, every network flow
+    ./scripts/ci-deploy.sh destroy        # the same evening
+
+One `Standard_F8als_v6` node, about $3 for a 4-hour session (D50). Your own access: `./scripts/aks-deploy.sh settings && ./scripts/aks-deploy.sh credentials`, then `kubectl -n voice port-forward svc/gateway 8080:8080`.
+
 ## CI
 
-`.github/workflows/ci.yml` runs on every pull request and push to `main`, and weekly. Required before a merge: `lint`, `unit`, `tests-must-fail` (17 known-bad code changes must fail the tests), `chart` (Conftest on the rendered chart; 18 known-bad chart changes must be denied), `images` (build, image rules, Trivy: no fixable High/Critical) and `e2e` (k3s on the runner, the chart with Whisper tiny and a fixed-answer chat stand-in, `helm test`, every network flow). On `main`, `publish` pushes `ghcr.io/salmanamn/voice-gateway` and `voice-models`; the weekly run rescans `main` and reports base-image tags that have moved. The speech-to-text and text-to-speech images are not published yet: they carry GPL code and the licence is still open (D23).
+`.github/workflows/ci.yml` runs on every pull request and push to `main`, and weekly. Required before a merge:
+- `lint`
+- `unit`
+- `tests-must-fail`: 23 known-bad code changes must fail the tests
+- `chart`: Conftest on four renderings of the chart; 30 known-bad chart changes must be denied
+- `iac-static`: fmt, validate, Checkov, policy tests
+- `iac-plan`: the full-stack plan against floci-az, Conftest, 24 known-bad plans must be denied
+- `images`: build, image rules, Trivy (no fixable High/Critical)
+- `e2e`: k3s on the runner, the chart with Whisper tiny and a fixed-answer chat stand-in, `helm test`, every network flow
+
+On `main`, `publish` pushes `ghcr.io/salmanamn/voice-gateway` and `voice-models`; the weekly run rescans `main` and reports base-image tags that have moved. The speech-to-text and text-to-speech images are not published yet: they carry GPL code and the licence is still open (D23).
 
 Locally: `uv run python scripts/tests_must_fail.py`, and with Helm and Conftest (`./scripts/ci-tools.sh helm conftest`) `python3 scripts/chart_must_fail.py`.
 

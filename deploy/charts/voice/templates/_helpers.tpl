@@ -14,10 +14,11 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
 
-{{/* One of our images: (dict "root" $ "name" "stt"). */}}
+{{/* One of our images: (dict "root" $ "name" "stt"). By digest when images.digests has one (AKS, D38), else by tag. */}}
 {{- define "voice.image" -}}
 {{- $i := .root.Values.images -}}
-{{- if $i.registry }}{{ $i.registry }}/{{ end }}voice-{{ .name }}:{{ $i.tag }}
+{{- $digest := index ($i.digests | default dict) .name | default "" -}}
+{{- if $i.registry }}{{ $i.registry }}/{{ end }}voice-{{ .name }}{{ if $digest }}@{{ $digest }}{{ else }}:{{ $i.tag }}{{ end }}
 {{- end }}
 
 {{/* Restricted Pod Security Standard (D30): pod level. Every pod of the chart uses it. */}}
@@ -112,4 +113,55 @@ podSelector:
     {{- range .Values.network.modelHosts.ports }}
     - { protocol: TCP, port: {{ . }} }
     {{- end }}
+{{- end }}
+{{/* Egress by host name (network.egress=fqdn, Cilium on AKS, D44): a CiliumNetworkPolicy egress pair for
+(dict "root" $ "hosts" (list ...)): DNS to kube-dns, inspected and limited to `dnsNames` (the hosts plus any
+cluster names the pod resolves), then TCP 443 to the hosts only. A host with "*" is a pattern, else an exact name. */}}
+{{- define "voice.fqdnEgress" -}}
+- toEndpoints:
+    - matchLabels:
+        "k8s:io.kubernetes.pod.namespace": {{ .root.Values.network.dns.namespace | quote }}
+        {{- range $k, $v := .root.Values.network.dns.podLabels }}
+        "k8s:{{ $k }}": {{ $v | quote }}
+        {{- end }}
+  toPorts:
+    - ports:
+        - { port: "53", protocol: ANY }
+      rules:
+        dns:
+          {{- range .dnsNames }}
+          - {{ if contains "*" . }}matchPattern{{ else }}matchName{{ end }}: {{ . | quote }}
+          {{- end }}
+- toFQDNs:
+    {{- range .hosts }}
+    - {{ if contains "*" . }}matchPattern{{ else }}matchName{{ end }}: {{ . | quote }}
+    {{- end }}
+  toPorts:
+    - ports:
+        - { port: "443", protocol: TCP }
+{{- end }}
+
+{{/* Pods whose egress is filtered by name resolve public names absolutely first (ndots 1): with the default 5 the
+cluster search domains are tried first, and the DNS filter would have to allow every one of them (D44). */}}
+{{- define "voice.fqdnDns" -}}
+dnsConfig:
+  options:
+    - { name: ndots, value: "1" }
+{{- end }}
+
+{{/* Azure OpenAI settings are complete, and only with name-based egress (D44, D45). */}}
+{{- define "voice.checkAzure" -}}
+{{- if .Values.azureOpenAI.enabled }}
+{{- range $k := list "endpoint" "deployment" "clientId" }}
+{{- if not (index $.Values.azureOpenAI $k) }}
+{{- fail (printf "azureOpenAI.%s is required when azureOpenAI.enabled (scripts/aks-deploy.sh sets it from the Terraform output)" $k) }}
+{{- end }}
+{{- end }}
+{{- if ne .Values.network.egress "fqdn" }}
+{{- fail "azureOpenAI.enabled needs network.egress=fqdn: the gateway may reach Azure OpenAI and Entra ID by name only (D44)" }}
+{{- end }}
+{{- end }}
+{{- if not (has .Values.network.egress (list "cidr" "fqdn")) }}
+{{- fail "network.egress must be cidr or fqdn" }}
+{{- end }}
 {{- end }}

@@ -1,13 +1,16 @@
 """The chat request that leaves the process, checked against a local OpenAI-compatible stand-in."""
 
 import json
+import sys
 import threading
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar
 
 import pytest
 
-from voice.llm import SYSTEM_PROMPT, Assistant
+from voice.llm import ENTRA_SCOPE, SYSTEM_PROMPT, Assistant
+from voice.settings import load
 from voice.textnorm import arabic_ratio
 
 
@@ -104,3 +107,42 @@ def test_system_prompt_is_arabic_and_asks_for_short_spoken_answers():
     assert arabic_ratio(SYSTEM_PROMPT) == 1.0
     assert "العربية الفصحى" in SYSTEM_PROMPT
     assert "جملة أو جملتين" in SYSTEM_PROMPT
+
+
+@pytest.fixture
+def fake_identity(monkeypatch):
+    """azure.identity as the gateway image has it, without a network: every token request is recorded."""
+    calls: list[str] = []
+    module = types.ModuleType("azure.identity")
+
+    class DefaultAzureCredential:
+        pass
+
+    def get_bearer_token_provider(credential, scope):
+        assert isinstance(credential, DefaultAzureCredential)
+
+        def token() -> str:
+            calls.append(scope)
+            return "entra-token"
+
+        return token
+
+    module.DefaultAzureCredential = DefaultAzureCredential
+    module.get_bearer_token_provider = get_bearer_token_provider
+    monkeypatch.setitem(sys.modules, "azure.identity", module)
+    return calls
+
+
+def test_entra_auth_sends_a_token_and_never_the_key(endpoint, fake_identity):
+    settings = load({"OPENAI_BASE_URL": endpoint, "OPENAI_AUTH": "entra", "OPENAI_API_KEY": "must-not-be-sent"})
+
+    Assistant.from_settings(settings).reply("سؤال")
+
+    assert FakeChat.requests[0]["auth"] == "Bearer entra-token"
+    assert fake_identity == [ENTRA_SCOPE]  # Azure OpenAI's scope, asked for at request time
+
+
+def test_key_auth_is_the_default_and_needs_no_azure_identity(endpoint, monkeypatch):
+    monkeypatch.setitem(sys.modules, "azure.identity", None)  # importing it would fail: the laptop path never does
+    Assistant.from_settings(load({"OPENAI_BASE_URL": endpoint})).reply("سؤال")
+    assert FakeChat.requests[0]["auth"] == "Bearer ollama"

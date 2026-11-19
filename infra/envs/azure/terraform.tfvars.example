@@ -1,0 +1,5 @@
+# cp terraform.tfvars.example terraform.tfvars   (terraform.tfvars is gitignored)
+subscription_id    = "00000000-0000-0000-0000-000000000000" # az account show --query id -o tsv
+location           = "uaenorth"
+operator_object_id = "" # az ad signed-in-user show --query id -o tsv
+deployer_object_id = "" # az identity show -g rg-slz-bootstrap -n id-slz-apply --query principalId -o tsv

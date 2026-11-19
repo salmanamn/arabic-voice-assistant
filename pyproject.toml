@@ -28,6 +28,7 @@ gateway = [
     "python-multipart>=0.0.33,<0.1", # the uploaded recording
     "openai>=3.51,<4", # one client for the chat endpoint and both speech services (D10)
     "httpx2>=2.12,<3", # the HTTP client openai uses; the gateway sets its connection limits (D27)
+    "azure-identity>=1.27,<2", # Entra ID tokens for Azure OpenAI from the workload identity (D45)
 ]
 models = [
     "huggingface-hub>=1.0,<2",
@@ -36,6 +37,7 @@ models = [
 dev = [
     "pytest>=9.2,<10",
     "ruff>=0.17,<0.18",
+    "pyyaml>=6,<7", # tests/unit/test_infra_contract.py reads the chart and namespace (the hub client brings it too)
 ]
 
 [tool.uv]

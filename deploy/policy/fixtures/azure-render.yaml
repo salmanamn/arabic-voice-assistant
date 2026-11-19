@@ -1,0 +1,12 @@
+# What scripts/aks-deploy.sh adds to deploy/azure-values.yaml, with made-up values: CI renders the Azure chart with
+# both files and checks it against deploy/policy (the real values exist only while the stack is up).
+images:
+  registry: acrvoiceazurexxxxx.azurecr.io
+  digests:
+    stt: sha256:1111111111111111111111111111111111111111111111111111111111111111
+    tts: sha256:2222222222222222222222222222222222222222222222222222222222222222
+    gateway: sha256:3333333333333333333333333333333333333333333333333333333333333333
+    models: sha256:4444444444444444444444444444444444444444444444444444444444444444
+azureOpenAI:
+  endpoint: https://oai-voice-azure-xxxxx.openai.azure.com/openai/v1/
+  clientId: 00000000-0000-0000-0000-000000000000
