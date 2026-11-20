@@ -1,0 +1,69 @@
+## AKSAuditAdmin: writes by identity
+TableName      Denied    Who                                                          Writes
+-------------  --------  -----------------------------------------------------------  --------
+PrimaryResult  0         aksService                                                   15895
+PrimaryResult  0         system:serviceaccount:kube-system:cilium-operator            2195
+PrimaryResult  0         system:apiserver                                             848
+PrimaryResult  0         system:node:aks-system-26532920-vmss000000                   795
+PrimaryResult  0         system:serviceaccount:kube-system:metrics-server             516
+PrimaryResult  1         d22fd9d2-84ae-42f5-8812-bea78456de61                         144
+PrimaryResult  0         system:serviceaccount:kube-system:deployment-controller      75
+PrimaryResult  0         system:serviceaccount:kube-system:replicaset-controller      69
+PrimaryResult  0         system:serviceaccount:kube-system:cilium                     49
+PrimaryResult  0         d39787e4-40ef-45e1-885a-37951a20698b                         40
+PrimaryResult  0         system:serviceaccount:kube-system:horizontal-pod-autoscaler  28
+PrimaryResult  0         system:serviceaccount:kube-system:endpointslice-controller   21
+PrimaryResult  0         system:serviceaccount:kube-system:disruption-controller      16
+PrimaryResult  0         system:serviceaccount:kube-system:job-controller             14
+PrimaryResult  0         system:serviceaccount:kube-system:endpoint-controller        12
+## AKSAuditAdmin: denied (403)
+RequestUri                                                             TableName      TimeGenerated                 Verb    Who
+---------------------------------------------------------------------  -------------  ----------------------------  ------  ------------------------------------
+/api/v1/namespaces?fieldManager=kubectl-create&fieldValidation=Strict  PrimaryResult  2026-11-20T02:45:19.8277307Z  create  d22fd9d2-84ae-42f5-8812-bea78456de61
+## Azure OpenAI requests
+Category                 OperationName           ResultSignature    TableName      Calls    Oid    P50_ms
+-----------------------  ----------------------  -----------------  -------------  -------  -----  --------
+Audit                    CreateResource                             PrimaryResult  2               None
+AzureOpenAIRequestUsage  completion                                 PrimaryResult  23              None
+RequestResponse          chatcompletions_create  200                PrimaryResult  23              1323
+Audit                    Vnet                                       PrimaryResult  1               None
+gateway identity principal id: 3fc1dc96-b33d-48dc-b701-becd350c05d6
+## ACR repository events
+OperationName    Repository     TableName      N
+---------------  -------------  -------------  ---
+Pull             voice-gateway  PrimaryResult  1
+importImage      voice-gateway  PrimaryResult  1
+Pull             voice-models   PrimaryResult  1
+importImage      voice-models   PrimaryResult  1
+Pull             voice-stt      PrimaryResult  1
+Push             voice-stt      PrimaryResult  1
+Push             voice-tts      PrimaryResult  1
+Pull             voice-tts      PrimaryResult  1
+## AzureActivity
+Caller                                OperationNameValue                                                           TableName      N
+------------------------------------  ---------------------------------------------------------------------------  -------------  ---
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE                                PrimaryResult  5
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION                                PrimaryResult  5
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.AUTHORIZATION/POLICIES/AUDITIFNOTEXISTS/ACTION                     PrimaryResult  4
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.NETWORK/LOADBALANCERS/WRITE                                        PrimaryResult  3
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.INSIGHTS/DIAGNOSTICSETTINGS/WRITE                                  PrimaryResult  3
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/LISTCLUSTERUSERCREDENTIAL/ACTION  PrimaryResult  2
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.NETWORK/PUBLICIPADDRESSES/DELETE                                   PrimaryResult  2
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.MANAGEDIDENTITY/USERASSIGNEDIDENTITIES/WRITE                       PrimaryResult  2
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.MANAGEDIDENTITY/USERASSIGNEDIDENTITIES/WRITE                       PrimaryResult  2
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.AUTHORIZATION/POLICIES/AUDIT/ACTION                                PrimaryResult  2
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.AUTHORIZATION/POLICIES/AUDITIFNOTEXISTS/ACTION                     PrimaryResult  2
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.COGNITIVESERVICES/ACCOUNTS/DEPLOYMENTS/WRITE                       PrimaryResult  1
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.RESOURCES/SUBSCRIPTIONS/RESOURCEGROUPS/WRITE                       PrimaryResult  1
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/WRITE                                PrimaryResult  1
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.COMPUTE/VIRTUALMACHINESCALESETS/WRITE                              PrimaryResult  1
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.CONTAINERREGISTRY/REGISTRIES/WRITE                                 PrimaryResult  1
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.NETWORK/VIRTUALNETWORKS/WRITE                                      PrimaryResult  1
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.RESOURCES/DEPLOYMENTS/VALIDATE/ACTION                              PrimaryResult  1
+24a1e91c-6cd7-4444-9511-9c830db22c29  MICROSOFT.NETWORK/PUBLICIPADDRESSES/WRITE                                    PrimaryResult  1
+d39787e4-40ef-45e1-885a-37951a20698b  MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/WRITE                             PrimaryResult  1
+## SecurityAlert
+AlertName                                                                 AlertSeverity    TableName      TimeGenerated
+------------------------------------------------------------------------  ---------------  -------------  ----------------------------
+SLZ-010 Federated credential added to or removed from a managed identity  Medium           PrimaryResult  2026-11-20T02:25:36.2763867Z
+SLZ-001 Role assignment changed outside CI                                Medium           PrimaryResult  2026-11-20T02:54:08.804465Z

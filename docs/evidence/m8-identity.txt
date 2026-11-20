@@ -1,0 +1,12 @@
+{"iss": "https://uaenorth.oic.prod-aks.azure.com/4d5a4f86-9245-45b3-997a-6e94f1129bf6/e5f9c897-8bdd-4e01-afee-6ca06d5005e1/", "sub": "system:serviceaccount:voice:gateway", "aud": ["api://AzureADTokenExchange"], "exp": 1795148122}
+['AZURE_AUTHORITY_HOST', 'AZURE_CLIENT_ID', 'AZURE_FEDERATED_TOKEN_FILE', 'AZURE_TENANT_ID'] kube token mounted: False
+cluster issuer: https://uaenorth.oic.prod-aks.azure.com/4d5a4f86-9245-45b3-997a-6e94f1129bf6/e5f9c897-8bdd-4e01-afee-6ca06d5005e1/
+[
+  {
+    "audience": "api://AzureADTokenExchange",
+    "issuer": "https://uaenorth.oic.prod-aks.azure.com/4d5a4f86-9245-45b3-997a-6e94f1129bf6/e5f9c897-8bdd-4e01-afee-6ca06d5005e1/",
+    "subject": "system:serviceaccount:voice:gateway"
+  }
+]
+Entra token for Cognitive Services: ok, expires 1795231514
+entra sign-in (portal): <tab> | <n> rows | identity <name> | resource <name> | status <status> | first <time UTC>

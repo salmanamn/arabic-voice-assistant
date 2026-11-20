@@ -349,3 +349,22 @@
 - azurerm 4.81 has no LocalDNS setting (none in `internal/services/containers` at v4.81.0), so Terraform can't make it `Disabled`.
 - Choice: Kubernetes **1.36** (AKS doesn't enable LocalDNS by default on 1.31–1.36): `kubernetes_version`, the namespace's Pod Security pins and CI's k3s (v1.36.6+k3s1) move together, as the contract test requires. A Conftest rule denies 1.37 and later (policy test + `iac_must_fail` mutation `cluster-localdns-version`): 26 rules, 28 tests, 25 mutations.
 - Not chosen: `azapi` to set the profile to `Disabled` (a second provider, a node reimage on every apply), and policies that allow DNS to the node (the helm test and load test pods use Kubernetes NetworkPolicies, which on Cilium can't select node addresses). The second is the long-term answer — AKS Automatic runs LocalDNS — and moves to Project 7, or back here once azurerm can set the profile.
+
+## D54 — The first deploy on AKS (M8)
+- One evening, 2026-11-<fill: day>: apply <fill: apply job minutes from m8-session.md> min, deploy-chart <fill: minutes> min, destroy <fill: minutes> min; the stack was up <fill: start → "destroyed, checks done"> h. Every resource was created by CI from the approved plan of 16; nothing was applied from the laptop<fill: except … (Step 1.5/5 by-hand deletes), or delete this>.
+- Hugging Face hosts the models Job used: <fill: ~/m8/hf-hosts.txt and hosts-added.txt>. <fill: "The four D44 patterns covered them." / "Added <host> to network.fqdn.modelHosts (values.yaml)">.
+- D51 (sign in again before new Entra tokens): <fill: "the credentials step got its AKS token at <time>, <n> min after the first sign-in" from the deploy-chart log, or "not needed this time: images took <n> min">.
+- D42 (one node): the cluster's own pods request <fill: cpu total − 3100m from m8-session.md "The node after helm upgrade"> CPU; a second stt replica <fill: fitted / didn't: FailedScheduling> (m8-hpa.md).
+
+## D55 — Measured on AKS (M8)
+- Turns (m8-turns.md, 20 of the `own` set): p90 total <fill> s against the 7 s budget (M5 minikube 9.71 s); stt <fill> s with 3 threads on the F8als_v6 (M5 2.80 s), chat <fill> s on gpt-5.4-mini with reasoning effort low (phi4-mini on the laptop 5.57 s), tts <fill> s (M5 0.95 s). <fill: which stages are still over budget, and why>.
+- The autoscaler (m8-hpa.md): 1 → 2 after <fill> s of load, back to 1 after <fill> min. Two replicas <fill: did / did not> raise throughput: <fill: calls per 15 s with one vs two>. On the laptop they didn't (M5).
+- Network (m8-netpol.md, m8-fqdn.txt): <fill: 53/53> flows as expected with Cilium and ACNS; names off the list are refused at DNS (`gaierror`), an allowed name on another port times out.
+
+## D56 — Identity and access, as they behaved (M8)
+- Workload identity with `automountServiceAccountToken: false` (D45): <fill: "works: the webhook projects azure-identity-token, no kube-api-access volume, AZURE_* set, the token's iss/sub/aud match the federated credential" from m8-identity.txt — or what failed>. The sign-in appears in Entra ID under <fill: the portal line> (the Free tenant has no export; see the Azure OpenAI log in m8-logs.txt<fill: with / without the caller's oid>).
+- The operator (m8-access.txt): namespace `voice` read/write, exec, port-forward, secrets and role bindings; no nodes, no kube-system, no `default`, no namespaces, no admin kubeconfig. <fill: any can-i answer that differed from the real call>.
+- Logs in log-slz-platform (m8-logs.txt): kube-audit-admin records the writes of CI's deployer, the operator and the cluster's controllers, including the operator's denied `create namespace`; guard records the API server's Entra ID checks; ACR records the pushes, imports and pulls. <fill: what was missing or surprising>.
+
+## D57 — What the session cost (M8)
+- <fill tomorrow from m8-cost.txt: total and the top meters> against D50's estimate of about $3.2 for 4 hours.

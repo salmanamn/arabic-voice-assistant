@@ -2,7 +2,7 @@
 
 A voice assistant that listens and answers in Arabic, built from open components: **faster-whisper** turns speech into text, an LLM writes a short answer, **Piper** speaks it. It runs on a laptop, as services on Kubernetes (minikube with Helm), and on AKS.
 
-**Status: M7 — AKS in Terraform, behind a plan gate.** The Azure stack (AKS with Entra ID and workload identity, ACR, Azure OpenAI) is written as Terraform. CI plans it against an emulator and checks the plan against policies; known-bad infrastructure must be denied. The chart has Azure values: images by digest from ACR, the answer from Azure OpenAI, and egress by host name with Cilium. `deploy.yml` applies an approved, exact plan and installs the chart. The first real deployment is M8.
+**Status: M8 — deployed to AKS once, measured, destroyed.** CI applied the Azure stack (AKS with Entra ID, Azure RBAC and workload identity, ACR, Azure OpenAI) from an approved, exact plan, installed the chart with CI's tested images by digest, and ran a spoken turn and every network flow on the cluster. On one 8-core node a turn took <fill> s at p90 (budget 7 s; minikube 9.71 s), with the answer from gpt-5.4-mini through the gateway's workload identity and egress allowed by host name only. The stack was destroyed the same evening; what it cost is in [docs/evidence/m8-cost.txt](docs/evidence/m8-cost.txt).
 
 ```
 browser (push to talk) ──POST /api/turn──▶ gateway :8080 ──▶ stt      POST /v1/audio/transcriptions  (faster-whisper)
@@ -72,6 +72,8 @@ Terraform in `infra/` (modules `aks`, `registry`, `openai`, composed by `stack`;
 
 One `Standard_F8als_v6` node, about $3 for a 4-hour session (D50). Your own access: `./scripts/aks-deploy.sh settings && ./scripts/aks-deploy.sh credentials`, then `kubectl -n voice port-forward svc/gateway 8080:8080`.
 
+The first session (M8) step by step, with what each command printed: [docs/evidence/m8-session.md](docs/evidence/m8-session.md). As the operator you are admin of namespace `voice` only ([docs/evidence/m8-access.txt](docs/evidence/m8-access.txt)); `scripts/cost.sh <date>` reads what a session cost the day after.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and push to `main`, and weekly. Required before a merge:
@@ -106,5 +108,6 @@ Then one terminal each (stop the compose services first: same ports):
 - **Real speech (M3):** 20 recorded questions (14 Modern Standard Arabic, 6 Gulf dialect) and 40 sentences of FLEURS Arabic (CC BY 4.0), Whisper small against large-v3-turbo; small chat models on 24 Arabic questions with known answers; and a time budget per stage, measured through the services. The comparison and the choices: [docs/evidence/m3-summary.md](docs/evidence/m3-summary.md). Audio is not in the repository; `scripts/speech_set.py` rebuilds the sets.
 - **Containers (M4):** the same turns through compose against the budget ([docs/evidence/m4-turns.md](docs/evidence/m4-turns.md)), what was built ([docs/evidence/m4-images.md](docs/evidence/m4-images.md)) and the image scans (`docs/evidence/m4-trivy-*.txt`).
 - **Kubernetes (M5):** a turn on minikube against the budget and against compose ([docs/evidence/m5-turns.md](docs/evidence/m5-turns.md)), the network policies flow by flow ([docs/evidence/m5-netpol.md](docs/evidence/m5-netpol.md)), the autoscaler under load ([docs/evidence/m5-hpa.md](docs/evidence/m5-hpa.md)), `helm test` ([docs/evidence/m5-helm-test.txt](docs/evidence/m5-helm-test.txt)), Ollama's cold load ([docs/evidence/m5-ollama-load.md](docs/evidence/m5-ollama-load.md)) and how the services stop ([docs/evidence/m5-stop.md](docs/evidence/m5-stop.md)).
+- **AKS (M8):** a turn against the budget and against minikube ([docs/evidence/m8-turns.md](docs/evidence/m8-turns.md)), the autoscaler on 8 cores ([docs/evidence/m8-hpa.md](docs/evidence/m8-hpa.md)), every network flow with Cilium FQDN policies ([docs/evidence/m8-netpol.md](docs/evidence/m8-netpol.md), [docs/evidence/m8-fqdn.txt](docs/evidence/m8-fqdn.txt)), workload identity ([docs/evidence/m8-identity.txt](docs/evidence/m8-identity.txt)), the audit and request logs in the platform workspace ([docs/evidence/m8-logs.txt](docs/evidence/m8-logs.txt)) and the cost ([docs/evidence/m8-cost.txt](docs/evidence/m8-cost.txt)).
 
 Design choices and their reasons: [docs/decisions.md](docs/decisions.md).
