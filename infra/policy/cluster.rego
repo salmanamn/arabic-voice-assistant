@@ -67,6 +67,17 @@ deny contains msg if {
 	msg := sprintf("%s: pin the Kubernetes minor version (deploy/namespace.yaml pins the Pod Security version to it)", [rc.address])
 }
 
+# From 1.37, AKS Standard turns LocalDNS on (mode Preferred) in a node pool created while no network policy exists, and
+# pods then send DNS to the node, not to CoreDNS: the CiliumNetworkPolicies' DNS rule (kube-dns pods) drops every
+# lookup (M8). azurerm 4.81 can't set a node pool's LocalDNS profile, so the cluster stays below 1.37 (D53).
+deny contains msg if {
+	some rc in clusters
+	version := object.get(rc.change.after, "kubernetes_version", "")
+	regex.match(`^1\.[0-9]+$`, version)
+	to_number(split(version, ".")[1]) >= 37
+	msg := sprintf("%s: Kubernetes %s turns on AKS LocalDNS, which azurerm can't turn off and the DNS policies don't reach (D53)", [rc.address, version])
+}
+
 # --- cost and the ReadWriteOnce volume (D42, D43, D50) ---
 
 allowed_node_sizes := {"Standard_F8als_v6", "Standard_F8as_v6"}

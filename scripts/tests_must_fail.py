@@ -180,8 +180,8 @@ MUTATIONS = [
     Mutation(
         "terraform-cluster-version-drift",
         "infra/modules/stack/variables.tf",
+        '  default     = "1.36"',
         '  default     = "1.37"',
-        '  default     = "1.38"',
         "tests/unit/test_infra_contract.py",
     ),
     Mutation(

@@ -28,7 +28,7 @@ cluster := {
 	"workload_identity_enabled": true,
 	"run_command_enabled": false,
 	"identity": [{"type": "SystemAssigned"}],
-	"kubernetes_version": "1.37",
+	"kubernetes_version": "1.36",
 	"sku_tier": "Free",
 	"default_node_pool": [{"node_count": 1, "auto_scaling_enabled": false, "vm_size": "Standard_F8als_v6"}],
 	"network_profile": [{
@@ -99,6 +99,10 @@ test_no_fqdn_security_fails if {
 
 test_floating_version_fails if {
 	count(deny) == 1 with input as patched(0, "kubernetes_version", null)
+}
+
+test_localdns_version_fails if {
+	count(deny) == 1 with input as patched(0, "kubernetes_version", "1.37")
 }
 
 test_paid_tier_fails if {

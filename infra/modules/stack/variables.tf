@@ -39,9 +39,9 @@ variable "components" {
 }
 
 variable "kubernetes_version" {
-  description = "AKS minor version; deploy/namespace.yaml pins the Pod Security Standard to the same one (D41)"
+  description = "AKS minor version; deploy/namespace.yaml pins the Pod Security Standard to the same one (D41). Below 1.37: LocalDNS (D53)"
   type        = string
-  default     = "1.37"
+  default     = "1.36"
 }
 
 variable "node_size" {
