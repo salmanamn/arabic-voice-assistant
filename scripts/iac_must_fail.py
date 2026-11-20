@@ -111,6 +111,7 @@ MUTATIONS = [
         setter("network_profile.0.advanced_networking.0.security_enabled", False),
     ),
     Mutation("cluster-floating-version", "azurerm_kubernetes_cluster", setter("kubernetes_version", None)),
+    Mutation("cluster-localdns-version", "azurerm_kubernetes_cluster", setter("kubernetes_version", "1.37")),
     Mutation("cluster-paid-tier", "azurerm_kubernetes_cluster", setter("sku_tier", "Standard")),
     Mutation(
         "cluster-autoscaler", "azurerm_kubernetes_cluster", setter("default_node_pool.0.auto_scaling_enabled", True)

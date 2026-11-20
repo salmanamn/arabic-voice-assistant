@@ -246,10 +246,10 @@
 ## D40 — Terraform layout: the same as ticket-triage-agent
 - `infra/modules/{aks,registry,openai,stack}`, `infra/envs/local` (floci-az, local state) and `infra/envs/azure` (remote state in Project 1's `stslztfstatet8trox`, container `tfstate`, key `arabic-voice-assistant-azure.tfstate`). `stack` is the composition root; the two envs differ only in provider config and inputs. `components {aks, openai, rbac}` turn off what floci-az can't create.
 - Providers: azurerm `~> 4.81`, random `~> 3.7`, Terraform 1.17.1. envs/azure registers nothing (`resource_provider_registrations = "none"`) and checks nine providers: Authorization, CognitiveServices, Compute, ContainerRegistry, ContainerService, Insights, ManagedIdentity, Network, OperationalInsights. `prevent_deletion_if_contains_resources = true`; Cognitive accounts are purged on destroy.
-- Checks: `terraform fmt`, `validate` for both envs, Checkov 3.4.3 per root (every skip carries its reason), 25 Conftest rules with 27 unit tests, and `scripts/iac_must_fail.py` (24 mutations of the full local plan, each must be denied).
+- Checks: `terraform fmt`, `validate` for both envs, Checkov 3.4.3 per root (every skip carries its reason), 25 Conftest rules with 27 unit tests (26 and 28 since D53), and `scripts/iac_must_fail.py` (24 mutations, 25 since D53 of the full local plan, each must be denied).
 
 ## D41 — The cluster
-- AKS 1.37 (GA, LTS), Free control-plane tier, node resource group `rg-voice-azure-nodes`.
+- AKS 1.37 (GA, LTS) — 1.36 since M8 (D53) — Free control-plane tier, node resource group `rg-voice-azure-nodes`.
 - Microsoft Entra ID with Azure RBAC for Kubernetes and **local accounts disabled**: every kubectl call is an Entra identity with an Azure role; there is no admin kubeconfig (`listClusterAdminCredential` fails). kubectl signs in through kubelogin (`convert-kubeconfig -l azurecli`, v0.2.22, checksum in `ci-tools.sh`).
 - OIDC issuer and workload identity on (D45). `run_command` off. Automatic upgrades: `patch` for Kubernetes, `NodeImage` for the node OS.
 - Azure CNI overlay, Cilium dataplane and network policy, with Advanced Container Networking security (FQDN filtering, D44). Observability (Hubble metrics) off.
@@ -342,3 +342,10 @@
 - The node's allocation (the requests of every pod, ours and the cluster's) is printed by the deploy job, which is cluster admin, after `helm upgrade`.
 - On the laptop `aks-deploy.sh` keeps its settings in `~/.cache/voice-aks`, because a WSL restart clears `/tmp`. CI uses `$RUNNER_TEMP`.
 - `scripts/cost.sh FROM [TO]` reads the actual cost of the two resource groups from Cost Management, for the day after a session (D50).
+
+## D53 — AKS 1.36: from 1.37 LocalDNS takes DNS away from CoreDNS (M8, first evening)
+- The first deploy (2026-11-20): every pod with a name-based policy failed every lookup (`[Errno -3] Temporary failure in name resolution`) — the models Job five times, the gateway for `login.microsoftonline.com` as well as `huggingface.co` — while both CiliumNetworkPolicies were `Valid` and ACNS ran with `advancedNetworkPolicies: FQDN`. stt and tts waited for models that never came; `helm --wait` timed out after 25 minutes; the stack was destroyed the same night.
+- Cause (from the AKS docs; the cluster was gone before `/etc/resolv.conf` could be read): from Kubernetes 1.37, AKS Standard sets LocalDNS to `Preferred` on a node pool without an explicit LocalDNS profile and turns it on when the checks pass — one check is that no network policy exists yet, true for a new cluster. Pods then send DNS to a proxy on the node (169.254.10.x), not to the CoreDNS pods; our DNS rules allow only `k8s-app: kube-dns` pods (D44), so every query is dropped. minikube and k3s have no LocalDNS, so M5–M7 couldn't see it.
+- azurerm 4.81 has no LocalDNS setting (none in `internal/services/containers` at v4.81.0), so Terraform can't make it `Disabled`.
+- Choice: Kubernetes **1.36** (AKS doesn't enable LocalDNS by default on 1.31–1.36): `kubernetes_version`, the namespace's Pod Security pins and CI's k3s (v1.36.6+k3s1) move together, as the contract test requires. A Conftest rule denies 1.37 and later (policy test + `iac_must_fail` mutation `cluster-localdns-version`): 26 rules, 28 tests, 25 mutations.
+- Not chosen: `azapi` to set the profile to `Disabled` (a second provider, a node reimage on every apply), and policies that allow DNS to the node (the helm test and load test pods use Kubernetes NetworkPolicies, which on Cilium can't select node addresses). The second is the long-term answer — AKS Automatic runs LocalDNS — and moves to Project 7, or back here once azurerm can set the profile.
