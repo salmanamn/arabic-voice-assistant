@@ -1,0 +1,56 @@
+]633;E;echo '# M8 first evening (2026-11-20): DNS failed, stack destroyed (D53)';675f9b5c-ef13-48cb-82f1-3317e4c399a1]633;C# M8 first evening (2026-11-20): DNS failed, stack destroyed (D53)
+
+```
+NAME                           READY   STATUS     RESTARTS   AGE   IP             NODE                             NOMINATED NODE   READINESS GATES
+pod/gateway-74b57d5c69-qph28   1/1     Running    0          71m   10.244.0.x    aks-system-57828600-vmss000000   <none>           <none>
+pod/models-d17639b4-92j74      0/1     Error      0          70m   10.244.0.x    aks-system-57828600-vmss000000   <none>           <none>
+pod/models-d17639b4-gtfqz      0/1     Error      0          69m   10.244.0.x    aks-system-57828600-vmss000000   <none>           <none>
+pod/models-d17639b4-j5dxh      0/1     Error      0          67m   10.244.0.x   aks-system-57828600-vmss000000   <none>           <none>
+pod/models-d17639b4-jlxl7      0/1     Error      0          65m   10.244.0.x   aks-system-57828600-vmss000000   <none>           <none>
+pod/models-d17639b4-vcwzp      0/1     Error      0          71m   10.244.0.x   aks-system-57828600-vmss000000   <none>           <none>
+pod/stt-67777d5fbf-tk5wh       0/1     Init:0/1   0          71m   10.244.0.x    aks-system-57828600-vmss000000   <none>           <none>
+pod/tts-96544b55b-bj6sb        0/1     Init:0/1   0          71m   10.244.0.x     aks-system-57828600-vmss000000   <none>           <none>
+
+NAME                                                AGE   VALID
+ciliumnetworkpolicy.cilium.io/gateway-by-name       71m   True
+ciliumnetworkpolicy.cilium.io/model-hosts-by-name   71m   True
+gateway-by-name {"conditions":[{"lastTransitionTime":"2026-11-19T23:27:44Z","message":"Policy validation succeeded","status":"True","type":"Valid"}]}
+model-hosts-by-name {"conditions":[{"lastTransitionTime":"2026-11-19T23:27:45Z","message":"Policy validation succeeded","status":"True","type":"Valid"}]}
+gateway resolves login.microsoftonline.com    command terminated with exit code 1
+gateway resolves huggingface.co               command terminated with exit code 1
+{
+  "acns": {
+    "enabled": true,
+    "observability": {
+      "enabled": false
+    },
+    "performance": {
+      "accelerationMode": "None"
+    },
+    "security": {
+      "advancedNetworkPolicies": "FQDN",
+      "enabled": true,
+      "transitEncryption": {
+        "type": "None"
+      }
+    }
+  },
+  "dataplane": "cilium",
+  "policy": "cilium"
+}
+Unable to connect to the server: dial tcp: lookup aks-voice-azure-ia1r4zip.hcp.uaenorth.azmk8s.io on 10.255.255.x:53: no such host
+ERROR: (ResourceGroupNotFound) Resource group 'rg-voice-azure' could not be found.
+Code: ResourceGroupNotFound
+Message: Resource group 'rg-voice-azure' could not be found.
+
+     25 FAIL tts-ar-kareem-medium: /models/tts-ar-kareem-medium does not exist
+      5 FAIL tts-ar-kareem-medium: download failed (ConnectError: [Errno -3] Temporary failure in name resolution)
+      5 FAIL stt-small: download failed (ConnectError: [Errno -3] Temporary failure in name resolution)
+      5 0/2 models match models.lock.json
+
+rg-voice-azure exists: false
+rg-voice-azure-nodes exists: false
+soft-deleted OpenAI accounts: 0
+state resources: 0
+role assignments left: 0
+```

@@ -1,0 +1,10 @@
+NAME                  AGE   VALID
+gateway-by-name       42m   True
+model-hosts-by-name   42m   True
+[{"matchName":"huggingface.co"},{"matchPattern":"*.hf.co"},{"matchPattern":"*.xethub.hf.co"},{"matchPattern":"*.*.cdn.hf.co"},{"matchName":"some-cdn.example.hf.co"}]
+gateway resolves login.microsoftonline.com                     20.231.128.x
+gateway resolves oai-voice-azure-e5cw8.openai.azure.com        20.74.197.x
+gateway resolves huggingface.co                                socket.gaierror: [Errno -3] Temporary failure in name resolution
+gateway resolves example.com                                   socket.gaierror: [Errno -3] Temporary failure in name resolution
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+OSError: [Errno 101] Network is unreachable
