@@ -79,3 +79,20 @@ def test_model_host_is_allowed_by_name():
     values = yaml_file(CHART / "values.yaml")
     host = re.match(r"https://([^/]+)", values["models"]["hfEndpoint"]).group(1)
     assert host in values["network"]["fqdn"]["modelHosts"]
+
+
+def test_azure_speech_is_off_unless_asked_for():
+    """The optional comparison (D59) adds nothing to a normal session: no account, no role, no egress, no setting."""
+    variables = (STACK / "variables.tf").read_text(encoding="utf-8")
+    assert re.search(r"^\s*speech\s*=\s*optional\(bool, false\)", variables, re.MULTILINE)
+    azure_env = (ROOT / "infra" / "envs" / "azure" / "main.tf").read_text(encoding="utf-8")
+    block = re.search(r'variable "speech_enabled" \{(.*?)\n\}', azure_env, re.DOTALL)
+    assert block and re.search(r"^\s*default\s*=\s*false$", block.group(1), re.MULTILINE)
+    speech = yaml_file(CHART / "values.yaml")["azureSpeech"]
+    assert (speech["enabled"], speech["stt"], speech["tts"]) == (False, False, False)
+    assert "azureSpeech" not in yaml_file(ROOT / "deploy" / "azure-values.yaml")  # only aks-deploy.sh adds it
+
+
+def test_speech_voice_speaks_the_recognition_locale():
+    speech = yaml_file(CHART / "values.yaml")["azureSpeech"]
+    assert speech["voice"].startswith(speech["locale"] + "-")  # ar-BH-AliNeural for ar-BH

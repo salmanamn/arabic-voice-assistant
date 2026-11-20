@@ -42,12 +42,15 @@ good_resources := [
 	diag("module.stack.module.aks[0]", [{"category": "kube-audit-admin", "category_group": ""}, {"category": "guard", "category_group": ""}]),
 	rc("module.stack.module.registry", "azurerm_container_registry", "this", {"sku": "Basic", "admin_enabled": false, "anonymous_pull_enabled": false}),
 	diag("module.stack.module.registry", all_logs),
-	rc("module.stack.module.openai[0]", "azurerm_cognitive_account", "this", {"local_auth_enabled": false, "custom_subdomain_name": "oai-x"}),
+	rc("module.stack.module.openai[0]", "azurerm_cognitive_account", "this", {"kind": "OpenAI", "local_auth_enabled": false, "custom_subdomain_name": "oai-x", "outbound_network_access_restricted": true}),
 	rc("module.stack.module.openai[0]", "azurerm_cognitive_deployment", "chat", {"sku": [{"name": "GlobalStandard", "capacity": 50}]}),
 	diag("module.stack.module.openai[0]", all_logs),
 	rc("module.stack", "azurerm_federated_identity_credential", "gateway", {"subject": "system:serviceaccount:voice:gateway", "audience": ["api://AzureADTokenExchange"]}),
 	rc("module.stack", "azurerm_role_assignment", "service", {"role_definition_id": role("7f951dda-4ed3-4680-a7ca-43fe172d538d"), "principal_type": "ServicePrincipal"}),
 	rc("module.stack", "azurerm_role_assignment", "operator", {"role_definition_id": role("3498e952-d568-435e-9b2c-8d77e338d7f7"), "principal_type": "User"}),
+	rc("module.stack.module.speech[0]", "azurerm_cognitive_account", "this", {"kind": "SpeechServices", "local_auth_enabled": false, "custom_subdomain_name": "spch-x", "outbound_network_access_restricted": true}),
+	diag("module.stack.module.speech[0]", all_logs),
+	rc("module.stack", "azurerm_role_assignment", "service_speech", {"role_definition_id": role("f2dc8367-1007-4938-bd23-fe263f013447"), "principal_type": "ServicePrincipal"}),
 ]
 
 plan_of(resources) := {
@@ -175,4 +178,22 @@ test_missing_chart_settings_fails if {
 
 test_registry_logs_without_all_logs_fail if {
 	count(deny) == 1 with input as patched(3, "enabled_log", [{"category": "ContainerRegistryLoginEvents", "category_group": ""}])
+}
+
+# --- the optional Azure AI Speech account (D59): indexes 10-12 ---
+
+test_speech_keys_fail if {
+	count(deny) == 1 with input as patched(10, "local_auth_enabled", true)
+}
+
+test_multi_service_account_fails if {
+	count(deny) == 1 with input as patched(10, "kind", "AIServices")
+}
+
+test_account_with_outbound_access_fails if {
+	count(deny) == 1 with input as patched(4, "outbound_network_access_restricted", false)
+}
+
+test_speech_role_for_a_user_fails if {
+	count(deny) == 1 with input as patched(12, "principal_type", "User")
 }

@@ -70,6 +70,22 @@ azureOpenAI:
   maxTokens: 160 # for a reasoning model its hidden reasoning tokens count against this too
   clientId: "" # client id of the gateway's managed identity
 
+# Azure AI Speech instead of the stt/tts pods for the gateway (the optional comparison on AKS, D59). enabled: the
+# gateway gets the account's settings and may reach its two hosts by name (needs azureOpenAI: the same workload
+# identity); stt / tts: which steps use it. The pods keep running either way, so `helm upgrade --reuse-values --set
+# azureSpeech.stt=true,azureSpeech.tts=true` switches over and `=false` back. scripts/aks-deploy.sh sets resourceId
+# and region when the stack has the account.
+azureSpeech:
+  enabled: false
+  stt: false
+  tts: false
+  resourceId: "" # the Speech account's ARM id (part of the token the Speech REST APIs take)
+  region: "" # e.g. uaenorth: the regional REST endpoints below
+  locale: ar-BH # recognition language; the voice must be of the same locale (tests/unit/test_infra_contract.py)
+  voice: ar-BH-AliNeural # a male voice, like Piper's kareem
+  sttUrl: "" # empty: https://<region>.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1
+  ttsUrl: "" # empty: https://<region>.tts.speech.microsoft.com/cognitiveservices/v1
+
 network:
   # cidr: the download jobs reach public addresses on 443 (NetworkPolicy has no host names, D29).
   # fqdn: the download jobs (and with Azure OpenAI the gateway) reach named hosts only (CiliumNetworkPolicy, D44).

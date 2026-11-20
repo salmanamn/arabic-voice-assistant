@@ -131,12 +131,27 @@ entra_only_registry(a) if {
 	a.anonymous_pull_enabled != true
 }
 
-# --- Azure OpenAI (D45) ---
+# --- Cognitive Services accounts: Azure OpenAI (D45) and the optional Azure AI Speech (D59) ---
 
 deny contains msg if {
 	some rc in resources("azurerm_cognitive_account")
 	rc.change.after.local_auth_enabled != false
-	msg := sprintf("%s: Azure OpenAI key auth must be disabled (local_auth_enabled = false)", [rc.address])
+	msg := sprintf("%s: key auth must be disabled (local_auth_enabled = false)", [rc.address])
+}
+
+# One kind per job: a multi-service account (AIServices) would put every Cognitive Service behind the same role.
+cognitive_kinds := {"OpenAI", "SpeechServices"}
+
+deny contains msg if {
+	some rc in resources("azurerm_cognitive_account")
+	not object.get(rc.change.after, "kind", "") in cognitive_kinds
+	msg := sprintf("%s: kind %v is not OpenAI or SpeechServices (D59)", [rc.address, object.get(rc.change.after, "kind", null)])
+}
+
+deny contains msg if {
+	some rc in resources("azurerm_cognitive_account")
+	object.get(rc.change.after, "outbound_network_access_restricted", false) != true
+	msg := sprintf("%s: the account itself may call nothing (outbound_network_access_restricted = true)", [rc.address])
 }
 
 deny contains msg if {

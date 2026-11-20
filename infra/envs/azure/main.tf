@@ -15,6 +15,12 @@ variable "operator_object_id" {
   default     = ""
 }
 
+variable "speech_enabled" {
+  description = "The optional Azure AI Speech account (D59). CI: deploy.yml input speech (ci-deploy.sh apply --speech)"
+  type        = bool
+  default     = false
+}
+
 variable "deployer_object_id" {
   description = "Principal id of id-slz-apply (CI variable APPLY_PRINCIPAL_ID): installs the chart (D46)"
   type        = string
@@ -29,7 +35,10 @@ module "stack" {
   # Project 1 platform workspace. ID built from names: the data source would list its shared keys.
   log_analytics_workspace_id = "/subscriptions/${var.subscription_id}/resourceGroups/rg-slz-platform/providers/Microsoft.OperationalInsights/workspaces/log-slz-platform"
 
-  # components: all on (defaults). Real Azure gets the full stack.
+  # components: the defaults (everything) on real Azure; Azure AI Speech only for the comparison evening (D59).
+  components = {
+    speech = var.speech_enabled
+  }
   operator_object_id = var.operator_object_id
   deployer_object_id = var.deployer_object_id
 

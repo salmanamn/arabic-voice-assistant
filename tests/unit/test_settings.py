@@ -101,3 +101,42 @@ def test_default_threads_follows_affinity_and_the_cap(tmp_path, monkeypatch):
     assert default_threads(sysfs) == 3
     monkeypatch.setattr(os, "sched_getaffinity", lambda _: set(range(12)))
     assert default_threads(fake_sysfs(tmp_path / "i7", I7_9750H)) == 6
+
+
+def test_speech_backends_default_to_our_pods():
+    settings = load({})
+    assert (settings.stt_backend, settings.tts_backend) == ("local", "local")
+    assert (settings.azure_speech_locale, settings.azure_speech_voice) == ("ar-BH", "ar-BH-AliNeural")
+    assert settings.azure_speech_stt_url == ""  # no region, no URL: nothing points at Azure
+
+
+def test_unknown_speech_backend_is_refused():
+    with pytest.raises(ValueError, match="TTS_BACKEND"):
+        load({"TTS_BACKEND": "google"})
+
+
+@pytest.mark.parametrize(
+    ("env", "missing"),
+    [
+        ({"STT_BACKEND": "azure"}, "AZURE_SPEECH_RESOURCE_ID, AZURE_SPEECH_REGION"),
+        ({"TTS_BACKEND": "azure", "AZURE_SPEECH_REGION": "uaenorth"}, "AZURE_SPEECH_RESOURCE_ID"),
+        ({"STT_BACKEND": "azure", "AZURE_SPEECH_RESOURCE_ID": "/x", "AZURE_SPEECH_STT_URL": "https://a"}, "REGION"),
+    ],
+)
+def test_azure_backend_needs_its_account(env, missing):
+    with pytest.raises(ValueError, match=missing):
+        load(env)
+
+
+def test_explicit_urls_replace_the_regional_ones():
+    custom = "https://spch-x.cognitiveservices.azure.com"
+    settings = load(
+        {
+            "STT_BACKEND": "azure",
+            "AZURE_SPEECH_RESOURCE_ID": "/x",
+            "AZURE_SPEECH_STT_URL": f"{custom}/stt/speech/recognition/conversation/cognitiveservices/v1",
+            "AZURE_SPEECH_TTS_URL": f"{custom}/tts/cognitiveservices/v1",
+        }
+    )
+    assert settings.azure_speech_stt_url.startswith(custom)
+    assert settings.azure_speech_tts_url == f"{custom}/tts/cognitiveservices/v1"

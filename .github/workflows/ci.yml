@@ -89,11 +89,12 @@ jobs:
         run: ./scripts/ci-tools.sh helm conftest
       - name: helm lint
         run: helm lint deploy/charts/voice && helm lint deploy/charts/voice -f deploy/ci-values.yaml
-      - name: Policy on what the chart renders (laptop, CI, load-test and Azure values)
+      - name: Policy on what the chart renders (laptop, CI, load-test, Azure and Azure with Speech values)
         run: |
           set -o pipefail
           azure="-f deploy/azure-values.yaml -f deploy/policy/fixtures/azure-render.yaml"
-          for values in "" "-f deploy/ci-values.yaml" "--set loadtest.enabled=true" "$azure"; do
+          speech="$azure -f deploy/policy/fixtures/azure-speech-render.yaml"
+          for values in "" "-f deploy/ci-values.yaml" "--set loadtest.enabled=true" "$azure" "$speech"; do
             echo "values: ${values:-values.yaml}"
             # shellcheck disable=SC2086 # $values is a list of helm arguments
             helm template voice deploy/charts/voice -n voice $values | conftest test --combine --no-color -p deploy/policy -

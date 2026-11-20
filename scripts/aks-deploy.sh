@@ -71,6 +71,13 @@ images() {
     echo "  endpoint: $(setting openai_endpoint)"
     echo "  deployment: $(setting chat_deployment)"
     echo "  clientId: $(setting gateway_client_id)"
+    # The optional Azure AI Speech account (D59): the gateway may reach it; stt/tts stay on the pods until switched.
+    if [[ -n $(jq -r '.speech_resource_id // ""' "$SETTINGS") ]]; then
+      echo "azureSpeech:"
+      echo "  enabled: true"
+      echo "  resourceId: $(setting speech_resource_id)"
+      echo "  region: $(setting speech_region)"
+    fi
   } >"$RUN_VALUES"
 }
 
@@ -93,11 +100,13 @@ install() {
 }
 
 test_() {
-  local ns host
+  local ns host region speech=()
   ns=$(setting namespace)
   host=$(setting openai_endpoint | sed -E 's|^https://([^/]+)/.*|\1|')
+  region=$(jq -r '.speech_region // ""' "$SETTINGS")
+  [[ -n $region ]] && speech=(--speech-host "$region.stt.speech.microsoft.com" --speech-host "$region.tts.speech.microsoft.com")
   helm test voice -n "$ns" --logs --timeout 10m
-  python3 scripts/check_netpol.py --namespace "$ns" --egress fqdn --chat-host "$host" --evidence "$WORK/netpol.md"
+  python3 scripts/check_netpol.py --namespace "$ns" --egress fqdn --chat-host "$host" "${speech[@]}" --evidence "$WORK/netpol.md"
 }
 
 logs() {

@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from voice.azure_speech import SpeechFailure
 from voice.services.gateway_app import create_app, speakable
 from voice.services.stt_app import create_app as create_stt
 from voice.services.tts_app import create_app as create_tts
@@ -199,3 +200,63 @@ def test_gateway_is_ready_without_its_dependencies(lab):
 )
 def test_speakable(text, limit, expected):
     assert speakable(text, limit) == expected
+
+
+class Cloud:
+    """Stands in for voice.azure_speech.AzureSpeech: records what the gateway sends, or fails like it does."""
+
+    def __init__(self, failure: SpeechFailure | None = None) -> None:
+        self.heard: list[bytes] = []
+        self.spoken: list[str] = []
+        self.failure = failure
+
+    def transcribe(self, data: bytes) -> Transcript:
+        if self.failure:
+            raise self.failure
+        self.heard.append(data)
+        return Transcript(text=QUESTION, audio_seconds=2.0, seconds=0.01)
+
+    def speak(self, text: str) -> bytes:
+        self.spoken.append(text)
+        return b"RIFF\x24\x00\x00\x00WAVEazure"
+
+
+AZURE = {"AZURE_SPEECH_RESOURCE_ID": "/subscriptions/s/x", "AZURE_SPEECH_REGION": "uaenorth"}
+
+
+def test_azure_speech_replaces_both_speech_services(lab):
+    cloud = Cloud()
+    env = {**lab.urls, "STT_BACKEND": "azure", "TTS_BACKEND": "azure", **AZURE}
+    response = turn(TestClient(create_app(load(env), cloud=cloud)), b"RIFF question")
+    assert response.status_code == 200
+    assert base64.b64decode(response.json()["audio"]) == b"RIFF\x24\x00\x00\x00WAVEazure"
+    assert cloud.heard == [b"RIFF question"]
+    assert cloud.spoken == ["عاصمة مملكة البحرين هي المنامة."]
+    assert lab.clients == {"stt": [], "tts": []}  # our pods got nothing
+    assert lab.synthesiser.spoken == []
+
+
+def test_one_backend_can_stay_local(lab):
+    cloud = Cloud()
+    env = {**lab.urls, "STT_BACKEND": "azure", **AZURE}
+    assert turn(TestClient(create_app(load(env), cloud=cloud))).status_code == 200
+    assert len(cloud.heard) == 1 and cloud.spoken == []
+    assert len(lab.clients["tts"]) == 1 and lab.clients["stt"] == []
+
+
+@pytest.mark.parametrize(
+    ("failure", "status", "code"),
+    [
+        (SpeechFailure(503, "busy"), 503, "stt_busy"),
+        (SpeechFailure(503, "unavailable"), 503, "stt_unavailable"),
+        (SpeechFailure(502, "failed"), 502, "stt_failed"),
+        (SpeechFailure(400, "unsupported_audio"), 400, "unsupported_audio"),
+        (SpeechFailure(413, "too_long"), 413, "too_long"),
+    ],
+)
+def test_azure_speech_failures_keep_the_gateways_codes(lab, failure, status, code):
+    env = {**lab.urls, "STT_BACKEND": "azure", **AZURE}
+    response = turn(TestClient(create_app(load(env), cloud=Cloud(failure))))
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert lab.calls == []  # no answer asked for when the question wasn't heard

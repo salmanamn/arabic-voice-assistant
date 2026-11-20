@@ -161,7 +161,27 @@ dnsConfig:
 {{- fail "azureOpenAI.enabled needs network.egress=fqdn: the gateway may reach Azure OpenAI and Entra ID by name only (D44)" }}
 {{- end }}
 {{- end }}
+{{- if .Values.azureSpeech.enabled }}
+{{- if not .Values.azureSpeech.resourceId }}
+{{- fail "azureSpeech.resourceId is required when azureSpeech.enabled (scripts/aks-deploy.sh sets it from the Terraform output)" }}
+{{- end }}
+{{- if not (or .Values.azureSpeech.region (and .Values.azureSpeech.sttUrl .Values.azureSpeech.ttsUrl)) }}
+{{- fail "azureSpeech.region (or both sttUrl and ttsUrl) is required when azureSpeech.enabled" }}
+{{- end }}
+{{- if not .Values.azureOpenAI.enabled }}
+{{- fail "azureSpeech.enabled needs azureOpenAI.enabled: the gateway's workload identity comes with it (D45, D59)" }}
+{{- end }}
+{{- end }}
 {{- if not (has .Values.network.egress (list "cidr" "fqdn")) }}
 {{- fail "network.egress must be cidr or fqdn" }}
 {{- end }}
+{{- end }}
+
+{{/* Azure AI Speech's REST endpoints (D59): the regional ones unless sttUrl / ttsUrl are set. */}}
+{{- define "voice.speechSttUrl" -}}
+{{- .Values.azureSpeech.sttUrl | default (printf "https://%s.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1" .Values.azureSpeech.region) -}}
+{{- end }}
+
+{{- define "voice.speechTtsUrl" -}}
+{{- .Values.azureSpeech.ttsUrl | default (printf "https://%s.tts.speech.microsoft.com/cognitiveservices/v1" .Values.azureSpeech.region) -}}
 {{- end }}

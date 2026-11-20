@@ -29,11 +29,12 @@ variable "diagnostics_enabled" {
 }
 
 variable "components" {
-  description = "Everything is on by default. envs/local turns off what floci-az 0.16.0 can't create (D39)."
+  description = "On by default but speech. envs/local turns off what floci-az 0.16.0 can't create (D39)."
   type = object({
-    aks    = optional(bool, true) # Microsoft.ContainerService (+ the gateway's federated credential)
-    openai = optional(bool, true) # Microsoft.CognitiveServices accounts + deployments
-    rbac   = optional(bool, true) # Microsoft.Authorization/roleAssignments
+    aks    = optional(bool, true)  # Microsoft.ContainerService (+ the gateway's federated credential)
+    openai = optional(bool, true)  # Microsoft.CognitiveServices accounts + deployments
+    rbac   = optional(bool, true)  # Microsoft.Authorization/roleAssignments
+    speech = optional(bool, false) # Azure AI Speech account: the optional comparison evening only (D59)
   })
   default = {}
 }

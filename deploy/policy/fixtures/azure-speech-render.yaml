@@ -1,0 +1,8 @@
+# What scripts/aks-deploy.sh adds when the stack has the optional Azure AI Speech account (D59), with made-up values.
+# CI renders the Azure chart with it on top of azure-render.yaml, both steps on Azure Speech.
+azureSpeech:
+  enabled: true
+  stt: true
+  tts: true
+  resourceId: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-voice-azure/providers/Microsoft.CognitiveServices/accounts/spch-voice-azure-xxxxx
+  region: uaenorth

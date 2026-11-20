@@ -2,12 +2,14 @@
 
 uv run python scripts/check_netpol.py [--namespace voice] [--outside 1.1.1.1:443] [--evidence FILE.md]
 uv run python scripts/check_netpol.py --egress fqdn --chat-host <account>.openai.azure.com    (AKS, D44)
+    [--speech-host uaenorth.stt.speech.microsoft.com --speech-host uaenorth.tts.speech.microsoft.com]  (D59)
 
 Connects from inside the pods (kubectl exec) to the Services by cluster IP, so a closed DNS port does not hide an
 open one, and to one address outside the cluster (--outside: a public address on 443). With --egress cidr (minikube,
 k3s) that address stands in for a model host and the download jobs reach it. With --egress fqdn (Cilium) nothing
 reaches it, and three named hosts are checked instead: the model host (huggingface.co), the chat endpoint and
-Entra ID; only the download jobs reach the first, only the gateway the other two. Ollama is left out when the
+Entra ID; only the download jobs reach the first, only the gateway the other two (and the Azure AI Speech hosts,
+--speech-host, when the release has azureSpeech). Ollama is left out when the
 release has none (Azure OpenAI). The download jobs and the test pods are not running at check time, so the script
 starts short-lived probe pods with their labels (and one with a label no policy knows). Each line: from, to,
 expected, seen. Exit 1 when any line differs from what is expected.
@@ -108,6 +110,9 @@ def main() -> int:
     parser.add_argument("--model-host", default="huggingface.co:443", help="fqdn: a model host, host:port")
     parser.add_argument("--chat-host", help="fqdn with Azure OpenAI: the endpoint's host name (port 443)")
     parser.add_argument("--entra-host", default="login.microsoftonline.com:443", help="fqdn: Entra ID, host:port")
+    parser.add_argument(
+        "--speech-host", action="append", default=[], help="fqdn with azureSpeech: an Azure AI Speech host (repeat)"
+    )
     parser.add_argument("--evidence", type=Path, help="also write the table as Markdown to this file")
     args = parser.parse_args()
     ns = args.namespace
@@ -131,6 +136,8 @@ def main() -> int:
     named = {"model host": args.model_host, "entra": args.entra_host}
     if args.chat_host:
         named["chat host"] = f"{args.chat_host}:443"
+    speech = {f"speech {i}": f"{host}:443" for i, host in enumerate(args.speech_host, start=1)}
+    named.update(speech)
     if args.egress == "fqdn":
         for name, hostport in named.items():
             host, port = hostport.rsplit(":", 1)
@@ -168,6 +175,7 @@ def main() -> int:
         expected_open.add(("models (job)", "outside"))  # public addresses on 443 (D29)
     else:  # by name (D44): the address is closed for everyone; each named host for its one client
         expected_open |= {("models (job)", "model host"), ("gateway", "chat host"), ("gateway", "entra")}
+        expected_open |= {("gateway", name) for name in speech}  # Azure AI Speech: the gateway only (D59)
     rows, wrong = [], 0
     for source, (pod, container, bash) in sources.items():
         for target, (host, port) in targets.items():
