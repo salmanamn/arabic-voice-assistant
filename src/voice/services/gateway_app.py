@@ -7,7 +7,8 @@ GET  /healthz, /readyz
 
 The gateway holds no model. Speech goes to the speech services through their OpenAI-style routes and the
 answer to the chat endpoint, all with the `openai` SDK, so any of the three can be swapped for a hosted
-service by changing a URL (D10).
+service by changing a URL (D10). With STT_BACKEND / TTS_BACKEND=azure that step goes to Azure AI Speech instead
+(voice.azure_speech, keyless through the workload identity; optional, D59).
 
 Run: uv run uvicorn --factory voice.services.gateway_app:create_app --port 8080
 """
@@ -25,6 +26,7 @@ from fastapi.responses import FileResponse
 from openai import OpenAI
 from starlette.concurrency import run_in_threadpool
 
+from voice.azure_speech import AzureSpeech, SpeechFailure
 from voice.llm import Assistant
 from voice.services.common import error, install_common
 from voice.settings import Settings, load
@@ -44,7 +46,14 @@ def speakable(text: str, limit: int) -> str:
 
 
 def upstream_error(stage: str, exc: Exception):
-    """Map a failed call to a speech service or the chat endpoint to one gateway error."""
+    """Map a failed call to a speech service (ours or Azure Speech) or the chat endpoint to one gateway error."""
+    if isinstance(exc, SpeechFailure):
+        if exc.status in (400, 413):  # the recording itself: a format or length Azure Speech can't take
+            return error(exc.status, exc.reason, "the speech service refused the recording")
+        if exc.reason in ("unavailable", "busy"):
+            message = "did not answer" if exc.reason == "unavailable" else "is busy; retry later"
+            return error(503, f"{stage}_{exc.reason}", f"the {stage} service {message}")
+        return error(502, f"{stage}_failed", f"the {stage} step failed")
     if isinstance(exc, openai.APIConnectionError):  # includes timeouts
         return error(503, f"{stage}_unavailable", f"the {stage} service did not answer")
     if isinstance(exc, openai.APIStatusError):
@@ -74,11 +83,14 @@ def speech_client(base_url: str, timeout: float) -> OpenAI:
     )
 
 
-def create_app(settings: Settings | None = None, assistant: Assistant | None = None):
+def create_app(settings: Settings | None = None, assistant: Assistant | None = None, cloud: AzureSpeech | None = None):
     settings = settings or load()
     stt = speech_client(settings.stt_url, timeout=120.0)
     tts = speech_client(settings.tts_url, timeout=60.0)
     chat = assistant or Assistant.from_settings(settings)
+    if "azure" in (settings.stt_backend, settings.tts_backend):
+        cloud = cloud or AzureSpeech.from_settings(settings)
+    log.info("speech: stt %s, tts %s", settings.stt_backend, settings.tts_backend)
 
     app = FastAPI(title="voice-gateway", docs_url=None, redoc_url=None)
     install_common(app, is_ready=lambda: True)
@@ -99,12 +111,20 @@ def create_app(settings: Settings | None = None, assistant: Assistant | None = N
 
         upload = (file.filename or "question", data, file.content_type or "application/octet-stream")
         try:
-            transcription = await run_in_threadpool(
-                stt.audio.transcriptions.create, model=settings.stt_model, file=upload, language=settings.language
-            )
-        except openai.OpenAIError as exc:
+            if settings.stt_backend == "azure":
+                heard = (await run_in_threadpool(cloud.transcribe, data)).text
+            else:
+                heard = (
+                    await run_in_threadpool(
+                        stt.audio.transcriptions.create,
+                        model=settings.stt_model,
+                        file=upload,
+                        language=settings.language,
+                    )
+                ).text
+        except (openai.OpenAIError, SpeechFailure) as exc:
             raise upstream_error("stt", exc) from None
-        heard = transcription.text.strip()
+        heard = heard.strip()
         timings["stt"] = time.perf_counter() - started
 
         if not heard:
@@ -123,12 +143,21 @@ def create_app(settings: Settings | None = None, assistant: Assistant | None = N
         if answer:
             mark = time.perf_counter()
             try:
-                speech = await run_in_threadpool(
-                    tts.audio.speech.create, model="piper", voice="default", input=answer, response_format="wav"
-                )
-            except openai.OpenAIError as exc:
+                if settings.tts_backend == "azure":
+                    wav = await run_in_threadpool(cloud.speak, answer)
+                else:
+                    wav = (
+                        await run_in_threadpool(
+                            tts.audio.speech.create,
+                            model="piper",
+                            voice="default",
+                            input=answer,
+                            response_format="wav",
+                        )
+                    ).content
+            except (openai.OpenAIError, SpeechFailure) as exc:
                 raise upstream_error("tts", exc) from None
-            audio = base64.b64encode(speech.content).decode("ascii")
+            audio = base64.b64encode(wav).decode("ascii")
             timings["tts"] = time.perf_counter() - mark
 
         result = _rounded(timings, started)

@@ -145,6 +145,15 @@ MUTATIONS = [
     ),
     Mutation("diagnostics-missing", "<plan>", drop("azurerm_monitor_diagnostic_setting", ".module.openai[0].")),
     Mutation("chart-settings-missing", "<plan>", chart_settings_removed),
+    # --- the optional Azure AI Speech account (D59) ---
+    Mutation("speech-api-keys", "<module.speech[0].azurerm_cognitive_account>", setter("local_auth_enabled", True)),
+    Mutation("speech-multi-service-kind", "<module.speech[0].azurerm_cognitive_account>", setter("kind", "AIServices")),
+    Mutation(
+        "speech-outbound-open",
+        "<module.speech[0].azurerm_cognitive_account>",
+        setter("outbound_network_access_restricted", False),
+    ),
+    Mutation("speech-role-to-user", '<service["gateway_speech"]>', setter("principal_type", "User")),
 ]
 
 

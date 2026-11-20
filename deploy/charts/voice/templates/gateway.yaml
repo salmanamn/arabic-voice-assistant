@@ -47,6 +47,17 @@ spec:
             - { name: OPENAI_BASE_URL, value: "http://ollama:11434/v1" }
             - { name: CHAT_MODEL, value: {{ .Values.ollama.model | quote }} }
             {{- end }}
+            {{- $speech := .Values.azureSpeech }}
+            {{- if $speech.enabled }}
+            # Azure AI Speech with the same workload identity, no key (D59); stt / tts choose the steps that use it
+            - { name: STT_BACKEND, value: {{ ternary "azure" "local" $speech.stt | quote }} }
+            - { name: TTS_BACKEND, value: {{ ternary "azure" "local" $speech.tts | quote }} }
+            - { name: AZURE_SPEECH_RESOURCE_ID, value: {{ $speech.resourceId | quote }} }
+            - { name: AZURE_SPEECH_STT_URL, value: {{ include "voice.speechSttUrl" . | quote }} }
+            - { name: AZURE_SPEECH_TTS_URL, value: {{ include "voice.speechTtsUrl" . | quote }} }
+            - { name: AZURE_SPEECH_LOCALE, value: {{ $speech.locale | quote }} }
+            - { name: AZURE_SPEECH_VOICE, value: {{ $speech.voice | quote }} }
+            {{- end }}
           resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
           {{- include "voice.probes" (dict "startupSeconds" 60) | nindent 10 }}
           lifecycle:

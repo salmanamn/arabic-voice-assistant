@@ -50,6 +50,7 @@ role_names := {
 	"5e0bd9bd-7b93-4f28-af87-19fc36ad61bd": "Cognitive Services OpenAI User",
 	"b1ff04bb-8a4e-4dc4-8eb5-8693973ce19b": "Azure Kubernetes Service RBAC Cluster Admin",
 	"3498e952-d568-435e-9b2c-8d77e338d7f7": "Azure Kubernetes Service RBAC Admin",
+	"f2dc8367-1007-4938-bd23-fe263f013447": "Cognitive Services Speech User",
 }
 
 # The roles a human (the operator) may get: namespace admin, and the chat model from the laptop.

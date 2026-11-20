@@ -70,6 +70,18 @@ module "openai" {
   tags                       = var.tags
 }
 
+# Azure AI Speech for the optional comparison with the stt/tts pods (D59): only when components.speech is on.
+module "speech" {
+  count                      = var.components.speech ? 1 : 0
+  source                     = "../speech"
+  name                       = "spch-${local.suffixed}"
+  resource_group_name        = azurerm_resource_group.this.name
+  location                   = azurerm_resource_group.this.location
+  diagnostics_enabled        = var.diagnostics_enabled
+  log_analytics_workspace_id = var.log_analytics_workspace_id
+  tags                       = var.tags
+}
+
 # Workload identity (D45): Azure accepts the cluster's tokens for this one service account as the gateway identity.
 resource "azurerm_federated_identity_credential" "gateway" {
   count                     = var.components.aks ? 1 : 0

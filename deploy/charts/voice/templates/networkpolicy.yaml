@@ -166,8 +166,8 @@ spec:
 {{- if .Values.azureOpenAI.enabled }}
 ---
 # By name (D44, D45): the gateway reaches its Azure OpenAI endpoint and Entra ID (the token exchange of its
-# workload identity) on 443; it resolves only those names and the Services of this namespace (its NetworkPolicy has
-# no DNS rule in this mode).
+# workload identity) on 443, and with azureSpeech the two Azure AI Speech hosts (D59); it resolves only those names
+# and the Services of this namespace (its NetworkPolicy has no DNS rule in this mode).
 {{- $openai := (urlParse .Values.azureOpenAI.endpoint).host }}
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -179,6 +179,9 @@ spec:
     matchLabels: {{- include "voice.selector" (dict "root" . "component" "gateway") | nindent 6 }}
   egress:
     {{- $hosts := list $openai .Values.network.fqdn.entraHost }}
+    {{- if .Values.azureSpeech.enabled }}
+    {{- $hosts = concat $hosts (list (urlParse (include "voice.speechSttUrl" .)).host (urlParse (include "voice.speechTtsUrl" .)).host) | uniq }}
+    {{- end }}
     {{- $names := append $hosts (printf "*.%s.svc.cluster.local" .Release.Namespace) }}
     {{- include "voice.fqdnEgress" (dict "root" . "hosts" $hosts "dnsNames" $names) | nindent 4 }}
 {{- end }}

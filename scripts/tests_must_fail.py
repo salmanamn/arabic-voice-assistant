@@ -4,10 +4,11 @@ Each mutation breaks one property the project depends on: only locked model byte
 nothing, downloads that resume and name the host they failed on, one model call at a time with a bounded queue,
 input limits, errors and logs that never echo what was said, a new connection per speech call, threads from
 physical cores, the request shape for reasoning models, Entra ID tokens instead of keys on Azure, text cleaned
-before it is spoken, Terraform that agrees with the chart (D48), and decision numbers used once each (D58). The
-script works on a temporary copy of the repository, so the working tree is never changed. Exit 1 when a mutation
-survives (the tests still pass), when its anchor text is no longer in the code (update the mutation together with
-the code), or when the clean copy fails (D35).
+before it is spoken, Terraform that agrees with the chart (D48), decision numbers used once each (D58), and Azure
+AI Speech keyless, fed only audio it takes, with escaped SSML, and off unless asked for (D59). The script works on
+a temporary copy of the repository, so the working tree is never changed. Exit 1 when a mutation survives (the
+tests still pass), when its anchor text is no longer in the code (update the mutation together with the code), or
+when the clean copy fails (D35).
 
 Usage: uv run python scripts/tests_must_fail.py [--only NAME] [--list]
 """
@@ -197,6 +198,48 @@ MUTATIONS = [
         '    model    = "gpt-5.4-mini"',
         '    model    = "gpt-5.6-terra"',
         "tests/unit/test_infra_contract.py",
+    ),
+    Mutation(
+        "terraform-speech-on-by-default",
+        "infra/modules/stack/variables.tf",
+        "speech = optional(bool, false)",
+        "speech = optional(bool, true)",
+        "tests/unit/test_infra_contract.py",
+    ),
+    Mutation(
+        "speech-token-without-resource",
+        "src/voice/azure_speech.py",
+        'return f"Bearer aad#{self.resource_id}#{self._token()}"',
+        'return f"Bearer {self._token()}"',
+        "tests/unit/test_azure_speech.py",
+    ),
+    Mutation(
+        "speech-any-wav-sent",
+        "src/voice/azure_speech.py",
+        "        if shape != (1, 2, 16000):",
+        "        if False:",
+        "tests/unit/test_azure_speech.py",
+    ),
+    Mutation(
+        "ssml-not-escaped",
+        "src/voice/azure_speech.py",
+        "{escape(text)}</voice>",
+        "{text}</voice>",
+        "tests/unit/test_azure_speech.py",
+    ),
+    Mutation(
+        "speech-backend-unchecked",
+        "src/voice/settings.py",
+        "        if backend not in SPEECH_BACKENDS:",
+        "        if False:",
+        "tests/unit/test_settings.py",
+    ),
+    Mutation(
+        "azure-stt-falls-back-to-the-pods",
+        "src/voice/services/gateway_app.py",
+        'if settings.stt_backend == "azure":',
+        "if False:",
+        "tests/unit/test_gateway.py",
     ),
     Mutation(
         "decision-number-repeated",

@@ -37,6 +37,15 @@ class Settings:
     max_speech_chars: int  # one answer to speak
     max_waiting: int  # requests a speech service queues behind the one it is working on; more get 503
 
+    # Azure AI Speech instead of the stt/tts services (optional, D59): "local" = our pods, "azure" = Azure Speech
+    stt_backend: str
+    tts_backend: str
+    azure_speech_resource_id: str  # the Speech account's ARM id: part of the token the Speech REST APIs take
+    azure_speech_stt_url: str  # short-audio recognition endpoint
+    azure_speech_tts_url: str  # synthesis endpoint
+    azure_speech_locale: str  # recognition language and the SSML xml:lang
+    azure_speech_voice: str  # neural voice name
+
     @property
     def stt_model_dir(self) -> Path:
         return self.models_dir / self.stt_model
@@ -73,6 +82,15 @@ def default_threads(sysfs: Path = SYSFS_CPU) -> int:
 
 
 OPENAI_AUTH = ("key", "entra")
+SPEECH_BACKENDS = ("local", "azure")
+
+
+def speech_urls(region: str) -> tuple[str, str]:
+    """Azure Speech's regional REST endpoints: short-audio recognition and synthesis (D59)."""
+    return (
+        f"https://{region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1",
+        f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1",
+    )
 
 
 def load(env: dict[str, str] | None = None) -> Settings:
@@ -80,6 +98,25 @@ def load(env: dict[str, str] | None = None) -> Settings:
     auth = env.get("OPENAI_AUTH", "key")
     if auth not in OPENAI_AUTH:
         raise ValueError(f"OPENAI_AUTH must be one of {', '.join(OPENAI_AUTH)}, not {auth!r}")
+    backends = {name: env.get(f"{name.upper()}_BACKEND", "local") for name in ("stt", "tts")}
+    for name, backend in backends.items():
+        if backend not in SPEECH_BACKENDS:
+            raise ValueError(f"{name.upper()}_BACKEND must be one of {', '.join(SPEECH_BACKENDS)}, not {backend!r}")
+    region = env.get("AZURE_SPEECH_REGION", "")
+    stt_default, tts_default = speech_urls(region) if region else ("", "")
+    speech = {
+        "resource_id": env.get("AZURE_SPEECH_RESOURCE_ID", ""),
+        "stt_url": env.get("AZURE_SPEECH_STT_URL", stt_default),
+        "tts_url": env.get("AZURE_SPEECH_TTS_URL", tts_default),
+    }
+    if "azure" in backends.values():
+        needed = {
+            "AZURE_SPEECH_RESOURCE_ID": speech["resource_id"],
+            "AZURE_SPEECH_REGION": speech["stt_url"] and speech["tts_url"],  # or both URLs set explicitly
+        }
+        missing = [name for name, value in needed.items() if not value]
+        if missing:
+            raise ValueError(f"a speech backend is azure but {', '.join(missing)} is not set")
     return Settings(
         models_dir=Path(env.get("MODELS_DIR", "models")),
         language=env.get("VOICE_LANGUAGE", "ar"),
@@ -100,4 +137,11 @@ def load(env: dict[str, str] | None = None) -> Settings:
         max_audio_seconds=float(env.get("MAX_AUDIO_SECONDS", "20")),
         max_speech_chars=int(env.get("MAX_SPEECH_CHARS", "600")),
         max_waiting=int(env.get("MAX_WAITING", "4")),
+        stt_backend=backends["stt"],
+        tts_backend=backends["tts"],
+        azure_speech_resource_id=speech["resource_id"],
+        azure_speech_stt_url=speech["stt_url"],
+        azure_speech_tts_url=speech["tts_url"],
+        azure_speech_locale=env.get("AZURE_SPEECH_LOCALE", "ar-BH"),
+        azure_speech_voice=env.get("AZURE_SPEECH_VOICE", "ar-BH-AliNeural"),
     )

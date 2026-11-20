@@ -26,6 +26,10 @@ on:
         description: "deploy-chart: the ci.yml run whose images to deploy (empty = last green push to main)"
         type: string
         default: ""
+      speech:
+        description: "apply: also the optional Azure AI Speech account (D59)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -44,6 +48,7 @@ env:
   TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   TF_VAR_operator_object_id: ${{ vars.OPERATOR_OBJECT_ID }}
   TF_VAR_deployer_object_id: ${{ vars.APPLY_PRINCIPAL_ID }}
+  TF_VAR_speech_enabled: ${{ inputs.speech == true }} # false on pull requests (no inputs) and plain applies (D59)
   RESOURCE_GROUP: rg-voice-azure
 
 jobs:

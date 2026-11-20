@@ -2,19 +2,27 @@
 # Dispatch deploy.yml from the laptop, show the plan, approve the `azure` environment, follow the run (D49).
 # Same flow as Project 3's ci-deploy.sh.
 #
-# Usage: scripts/ci-deploy.sh apply | destroy | deploy-chart [CI_RUN_ID]
+# Usage: scripts/ci-deploy.sh apply [--speech] | destroy | deploy-chart [CI_RUN_ID]
 #   apply          the whole stack: AKS, ACR, Azure OpenAI, roles, diagnostics
+#   apply --speech the same plus the optional Azure AI Speech account and the gateway's role on it (D59)
 #   deploy-chart   CI's tested images -> ACR, the chart -> AKS, helm test + network flows (after apply)
 #   destroy        everything, then checks that both resource groups are gone
 set -euo pipefail
 
-ACTION=${1:?usage: $0 apply | destroy | deploy-chart [CI_RUN_ID]}
-IMAGES_RUN=${2:-}
+ACTION=${1:?usage: $0 apply [--speech] | destroy | deploy-chart [CI_RUN_ID]}
 [[ $ACTION =~ ^(apply|destroy|deploy-chart)$ ]] || { echo "unknown action $ACTION"; exit 2; }
+SPEECH=false
+IMAGES_RUN=""
+if [[ ${2:-} == --speech ]]; then
+  [[ $ACTION == apply ]] || { echo "--speech goes with apply"; exit 2; }
+  SPEECH=true
+else
+  IMAGES_RUN=${2:-}
+fi
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
 since=$(date -u -d "-60 sec" +%Y-%m-%dT%H:%M:%SZ) # tolerate a little clock skew vs GitHub
-gh workflow run deploy.yml --ref main -f action="$ACTION" -f images_run="$IMAGES_RUN"
+gh workflow run deploy.yml --ref main -f action="$ACTION" -f images_run="$IMAGES_RUN" -f speech="$SPEECH"
 RUN_ID=""
 for _ in $(seq 1 20); do
   sleep 3
@@ -24,7 +32,7 @@ for _ in $(seq 1 20); do
 done
 [[ -n $RUN_ID ]] || { echo "the dispatched run didn't show up"; exit 1; }
 URL="https://github.com/$REPO/actions/runs/$RUN_ID"
-echo "run: $URL ($ACTION)"
+echo "run: $URL ($ACTION$([[ $SPEECH == true ]] && echo ', with Azure AI Speech'))"
 
 if [[ $ACTION != deploy-chart ]]; then
   job() { gh run view "$RUN_ID" --json jobs --jq ".jobs[] | select(.name==\"plan\") | .$1"; }

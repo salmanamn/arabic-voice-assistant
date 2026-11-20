@@ -24,6 +24,7 @@ module "stack" {
     aks    = var.full_stack
     openai = var.full_stack
     rbac   = var.full_stack
+    speech = var.full_stack # the policy gate plans the optional Speech account too (D59)
   }
 
   # Placeholders so the full-stack plan has every role assignment the Azure plan has (plan only).

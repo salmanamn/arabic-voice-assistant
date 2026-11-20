@@ -332,3 +332,31 @@ deny contains "Deployment/gateway: with OPENAI_AUTH=entra there is no OPENAI_API
 	some e in c.env
 	e.name == "OPENAI_API_KEY"
 }
+
+# --- Azure AI Speech through the gateway (optional, D59) ---
+
+# The gateway's names: Entra ID and one account each of Azure OpenAI and Azure AI Speech, by exact name. A pattern
+# (or any other host) would let a workload identity token travel to an endpoint nobody reviewed.
+azure_ai_host(name) if name == "login.microsoftonline.com"
+
+azure_ai_host(name) if endswith(name, ".openai.azure.com")
+
+azure_ai_host(name) if endswith(name, ".speech.microsoft.com")
+
+azure_ai_host(name) if endswith(name, ".cognitiveservices.azure.com")
+
+deny contains sprintf("CiliumNetworkPolicy/%s: the gateway reaches Entra ID and Azure AI endpoints by exact name only, not %v", [p.metadata.name, f]) if {
+	some p in cilium
+	"gateway" in cnp_selected(p)
+	some rule in p.spec.egress
+	some f in object.get(rule, "toFQDNs", [])
+	not azure_ai_host(object.get(f, "matchName", ""))
+}
+
+deny contains "Deployment/gateway: Azure AI Speech takes the workload identity's token, never a key (D59)" if {
+	some w in workloads
+	w.metadata.name == "gateway"
+	some c in w.spec.template.spec.containers
+	some e in c.env
+	contains(e.name, "SPEECH_KEY")
+}

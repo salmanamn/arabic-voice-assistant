@@ -2,11 +2,12 @@
 
 Each mutation weakens one property the chart promises (restricted Pod Security, no CPU limits, threads from the
 CPU request, probes and a graceful stop, read-only model volumes, default-deny networking, egress only for the
-download Jobs; on AKS: images by digest, egress by host name only, the workload identity on the gateway only). The
-script renders a temporary copy of the chart with `helm template` and runs Conftest on it, so the working tree is
-never changed. A mutation without a file changes only the values it renders with. Exit 1 when a mutation is
-allowed (the policy misses it), when its anchor text is no longer in the chart (update the mutation together
-with the chart), or when a clean rendering (laptop, CI or AKS values) is denied (D35).
+download Jobs; on AKS: images by digest, egress by host name only, the workload identity on the gateway only, Azure
+AI Speech by exact name and without a key). The script renders a temporary copy of the chart with `helm template`
+and runs Conftest on it, so the working tree is never changed. A mutation without a file changes only the values it
+renders with. Exit 1 when a mutation is allowed (the policy misses it), when its anchor text is no longer in the
+chart (update the mutation together with the chart), or when a clean rendering (laptop, CI, AKS or AKS with Azure
+Speech values) is denied (D35).
 
 Usage: uv run python scripts/chart_must_fail.py [--only NAME] [--list]   (needs helm and conftest on PATH)
 """
@@ -29,6 +30,9 @@ AZURE = (
     "-f",
     str(ROOT / "deploy" / "policy" / "fixtures" / "azure-render.yaml"),
 )
+
+# The optional Azure AI Speech values (D59) on top of the Azure rendering.
+AZURE_SPEECH = (*AZURE, "-f", str(ROOT / "deploy" / "policy" / "fixtures" / "azure-speech-render.yaml"))
 
 
 @dataclass(frozen=True)
@@ -246,6 +250,24 @@ MUTATIONS = [
         "there is no OPENAI_API_KEY",
         AZURE,
     ),
+    # --- Azure AI Speech (the Azure values + deploy/policy/fixtures/azure-speech-render.yaml): D59 ---
+    Mutation(
+        "speech-host-anywhere",
+        None,
+        "",
+        "",
+        "by exact name only",
+        (*AZURE_SPEECH, "--set", "azureSpeech.ttsUrl=https://speech.example.com/cognitiveservices/v1"),
+    ),
+    Mutation(
+        "speech-key",
+        "templates/gateway.yaml",
+        "            - { name: AZURE_SPEECH_RESOURCE_ID, value: {{ $speech.resourceId | quote }} }",
+        "            - { name: AZURE_SPEECH_RESOURCE_ID, value: {{ $speech.resourceId | quote }} }\n"
+        "            - { name: AZURE_SPEECH_KEY, value: k }",
+        "never a key",
+        AZURE_SPEECH,
+    ),
 ]
 
 
@@ -286,6 +308,7 @@ def main() -> int:
             "values.yaml": (),
             "ci-values.yaml": ("-f", str(ROOT / "deploy" / "ci-values.yaml")),
             "azure": AZURE,
+            "azure-speech": AZURE_SPEECH,
         }
         for label, extra in baselines.items():
             code, out = render_and_check(chart, extra)
