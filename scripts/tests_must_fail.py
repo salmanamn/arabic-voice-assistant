@@ -4,10 +4,10 @@ Each mutation breaks one property the project depends on: only locked model byte
 nothing, downloads that resume and name the host they failed on, one model call at a time with a bounded queue,
 input limits, errors and logs that never echo what was said, a new connection per speech call, threads from
 physical cores, the request shape for reasoning models, Entra ID tokens instead of keys on Azure, text cleaned
-before it is spoken, and Terraform that agrees with the chart (D48). The script works on a temporary copy of the
-repository, so the working tree is never changed. Exit 1 when a mutation survives (the tests still pass), when its
-anchor text is no longer in the code (update the mutation together with the code), or when the clean copy fails
-(D35).
+before it is spoken, Terraform that agrees with the chart (D48), and decision numbers used once each (D58). The
+script works on a temporary copy of the repository, so the working tree is never changed. Exit 1 when a mutation
+survives (the tests still pass), when its anchor text is no longer in the code (update the mutation together with
+the code), or when the clean copy fails (D35).
 
 Usage: uv run python scripts/tests_must_fail.py [--only NAME] [--list]
 """
@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-COPY = ("src", "tests", "eval", "infra", "deploy", "scripts", "pyproject.toml", "models.lock.json")
+COPY = ("src", "tests", "eval", "infra", "deploy", "scripts", "docs", "pyproject.toml", "models.lock.json")
 SUMMARY = re.compile(r"(\d+) failed")
 
 
@@ -197,6 +197,13 @@ MUTATIONS = [
         '    model    = "gpt-5.4-mini"',
         '    model    = "gpt-5.6-terra"',
         "tests/unit/test_infra_contract.py",
+    ),
+    Mutation(
+        "decision-number-repeated",
+        "docs/decisions.md",
+        "## D57 — ",
+        "## D56 — ",
+        "tests/unit/test_decisions.py",
     ),
 ]
 
