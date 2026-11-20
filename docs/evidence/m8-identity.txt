@@ -9,4 +9,4 @@ cluster issuer: https://uaenorth.oic.prod-aks.azure.com/4d5a4f86-9245-45b3-997a-
   }
 ]
 Entra token for Cognitive Services: ok, expires 1795231514
-entra sign-in (portal): <tab> | <n> rows | identity <name> | resource <name> | status <status> | first <time UTC>
+entra sign-in (portal): not recorded this session

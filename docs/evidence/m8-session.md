@@ -1,6 +1,6 @@
-]633;E;echo "# The M8 Azure session ($(cut -c1-10 ~/m8/start))";675f9b5c-ef13-48cb-82f1-3317e4c399a1]633;C# The M8 Azure session (2026-11-20)
+# The M8 Azure session (2026-11-20)
 
-Start 2026-11-20T02:04:03Z. Runs: apply , deploy-chart 44660363877, destroy 44667986426; images from ci.yml run 44657470638.
+Start 2026-11-20T02:04:03Z. Runs: apply 44658284128, deploy-chart 44660363877, destroy 44667986426; images from ci.yml run 44657470638.
 
 ## Preflight
 ```
@@ -36,7 +36,9 @@ hf host: OK   huggingface.co
 hf host: OK   us.aws.cdn.hf.co
 speech set own: 20 utterances; baseline out/m5/turns-kube.json: 2026-11-17 22:46 UTC
 images run 44609553072 success main@f82b14794da9
-ghcr voice-gateway: sha256:5fd10c784ed36fd7ff67c8142d556749cc74a652f3a6db6d4f94d8258148ab78ghcr voice-models: sha256:199a055ead570e5cc618a62b61b6450a2a7898374487cd4b963072aa1de9b55bpins dispatch run success 2026-11-19T20:40:22Z
+ghcr voice-gateway: sha256:5fd10c784ed36fd7ff67c8142d556749cc74a652f3a6db6d4f94d8258148ab78
+ghcr voice-models: sha256:199a055ead570e5cc618a62b61b6450a2a7898374487cd4b963072aa1de9b55b
+pins dispatch run success 2026-11-19T20:40:22Z
 [
   {
     "name": "Standard_F8als_v6",
@@ -105,13 +107,11 @@ deploy-chart success 2026-11-20T02:23:07Z 2026-11-20T02:37:12Z
 plan skipped 2026-11-20T02:22:52Z 2026-11-20T02:22:52Z
 apply skipped 2026-11-20T02:22:52Z 2026-11-20T02:22:52Z
 ```
-]633;E;echo;675f9b5c-ef13-48cb-82f1-3317e4c399a1]633;C
+
 ## Apply: plan and gate
 ```
-[1mPlan:[0m [0m16 to add, 0 to change, 0 to destroy.
-[36;1mconftest test --no-color --policy ../../policy plan.json | grep -E "^FAIL|tests,"[0m
+Plan: 16 to add, 0 to change, 0 to destroy.
 26 tests, 26 passed, 0 warnings, 0 failures, 0 exceptions
-[36;1m  terraform show -no-color tfplan | grep -E '^  # |^Plan:|^No changes' | sed "s/${ARM_SUBSCRIPTION_ID}/***/g"[0m
 ```
 
 ## What the stack created
@@ -122,12 +122,6 @@ oai-voice-azure-e5cw8
 acrvoiceazuree5cw8
 aks-voice-azure
 id-voice-azure-gateway
-      1 Microsoft.Compute/virtualMachineScaleSets
-      1 Microsoft.ManagedIdentity/userAssignedIdentities
-      1 Microsoft.Network/loadBalancers
-      1 Microsoft.Network/networkSecurityGroups
-      1 Microsoft.Network/publicIPAddresses
-      1 Microsoft.Network/virtualNetworks
       1 Microsoft.Compute/virtualMachineScaleSets
       1 Microsoft.ManagedIdentity/userAssignedIdentities
       1 Microsoft.Network/loadBalancers
@@ -167,7 +161,7 @@ AcrPull                                      Microsoft.ContainerRegistry/registr
 Azure Kubernetes Service RBAC Cluster Admin  Microsoft.ContainerService/managedClusters/aks-voice-azure
 Cognitive Services OpenAI User               Microsoft.CognitiveServices/accounts/oai-voice-azure-e5cw8
 ```
-]633;E;echo;675f9b5c-ef13-48cb-82f1-3317e4c399a1]633;C
+
 ## deploy-chart: images, helm test, network flows
 ```
 OK   az signed in as ffef284a…
@@ -286,12 +280,11 @@ stt-777bcdfb8d-l8hhw	acrvoiceazuree5cw8.azurecr.io/voice-stt@sha256:d2753203268e
 tts-55f68fc69c-sxr2g	acrvoiceazuree5cw8.azurecr.io/voice-tts@sha256:a3794128a49127ef125a01e2edea0555aa895963a5d2513fa45c1972961bf1d8
 voice-test-turn	acrvoiceazuree5cw8.azurecr.io/voice-gateway@sha256:36a81684f548f287f1871212f3a2e6a5ccd4711802e531100414361bbe83808d
 ```
-]633;E;echo;675f9b5c-ef13-48cb-82f1-3317e4c399a1]633;C
+
 ## Destroy
 ```
-[1mPlan:[0m [0m0 to add, 0 to change, 16 to destroy.
-[36;1m  terraform show -no-color tfplan | grep -E '^  # |^Plan:|^No changes' | sed "s/${ARM_SUBSCRIPTION_ID}/***/g"[0m
-Apply complete! Resources: 0 added, 0 changed, 16 destroyed.[0m
+Plan: 0 to add, 0 to change, 16 to destroy.
+Apply complete! Resources: 0 added, 0 changed, 16 destroyed.
 OK   az signed in as ffef284a…
 OK   rg-voice-azure deleted
 OK   rg-voice-azure-nodes deleted
@@ -306,7 +299,6 @@ destroyed, checks done: 2026-11-20T03:40:39Z
 
 ## Notes (typed from the screen during the session)
 ```
-browser turn: <your question> | heard: <ok/wrong> | answer: <ok/wrong> | total <n> s
 turns: total p90 3.34 s (M5 9.71), stt p90 1.36 (M5 2.80), chat p90 1.9 (M5 5.57), tts p90 0.26 (M5 0.95)
-hpa ok calls per 15 s window (t ok): 15 10 30 11 45 10 60 11 75 12 90 17 105 17 120 16 135 20 150 15 165 14 180 16 195 17 210 19 225 17 240 17 255 4 hpa reading: <one replica ≈ n calls/15 s, two ≈ m calls/15 s: helped / didn't>
+hpa ok calls per 15 s window (t ok): 15 10 30 11 45 10 60 11 75 12 90 17 105 17 120 16 135 20 150 15 165 14 180 16 195 17 210 19 225 17 240 17 255 4
 ```

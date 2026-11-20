@@ -4,12 +4,12 @@ create pods/portforward -n voice                 yes
 get secrets -n voice                             yes
 create rolebindings -n voice                     yes
 patch ciliumnetworkpolicies.cilium.io -n voice   yes
-delete namespace voice                           error: you must specify two arguments: verb resource or verb resource/resourceName.
+delete namespace voice                           (not answered: should be `delete namespaces/voice`; see the real calls below)
 create resourcequotas -n voice                   no - User does not have access to the resource in Azure. Update role assignment to allow access.
 get pods -n kube-system                          no - User does not have access to the resource in Azure. Update role assignment to allow access.
 get services -n default                          no - User does not have access to the resource in Azure. Update role assignment to allow access.
-list nodes                                       Warning: resource 'nodes' is not namespace scoped
-create clusterrolebindings                       Warning: resource 'clusterrolebindings' is not namespace scoped in group 'rbac.authorization.k8s.io'
+list nodes                                       (answer hidden by kubectl's warning; the real call below is Forbidden)
+create clusterrolebindings                       (answer hidden by kubectl's warning; not tried for real)
 NAME                      READY   STATUS      RESTARTS   AGE   IP             NODE                             NOMINATED NODE   READINESS GATES
 gateway-968f6cc8c-t7bfh   1/1     Running     0          17m   10.244.0.x   aks-system-26532920-vmss000000   <none>           <none>
 models-29ce0a6a-dg7k7     0/1     Completed   0          17m   10.244.0.x    aks-system-26532920-vmss000000   <none>           <none>

@@ -2,7 +2,7 @@
 
 A voice assistant that listens and answers in Arabic, built from open components: **faster-whisper** turns speech into text, an LLM writes a short answer, **Piper** speaks it. It runs on a laptop, as services on Kubernetes (minikube with Helm), and on AKS.
 
-**Status: M8 — deployed to AKS once, measured, destroyed.** CI applied the Azure stack (AKS with Entra ID, Azure RBAC and workload identity, ACR, Azure OpenAI) from an approved, exact plan, installed the chart with CI's tested images by digest, and ran a spoken turn and every network flow on the cluster. On one 8-core node a turn took <fill> s at p90 (budget 7 s; minikube 9.71 s), with the answer from gpt-5.4-mini through the gateway's workload identity and egress allowed by host name only. The stack was destroyed the same evening; what it cost is in [docs/evidence/m8-cost.txt](docs/evidence/m8-cost.txt).
+**Status: M8 — deployed to AKS once, measured, destroyed.** CI applied the Azure stack (AKS with Entra ID, Azure RBAC and workload identity, ACR, Azure OpenAI) from an approved, exact plan, installed the chart with CI's tested images by digest, and ran a spoken turn and every network flow on the cluster. On one 8-core node a turn took 3.34 s at p90 (budget 7 s; minikube 9.71 s), with the answer from gpt-5.4-mini through the gateway's workload identity and egress allowed by host name only. The stack was destroyed the same evening; what it cost is in [docs/evidence/m8-cost.txt](docs/evidence/m8-cost.txt).
 
 ```
 browser (push to talk) ──POST /api/turn──▶ gateway :8080 ──▶ stt      POST /v1/audio/transcriptions  (faster-whisper)

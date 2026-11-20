@@ -1,4 +1,4 @@
-]633;E;echo '# M8 first evening (2026-11-20): DNS failed, stack destroyed (D53)';675f9b5c-ef13-48cb-82f1-3317e4c399a1]633;C# M8 first evening (2026-11-20): DNS failed, stack destroyed (D53)
+# M8 first evening (2026-11-20): DNS failed, stack destroyed (D53)
 
 ```
 NAME                           READY   STATUS     RESTARTS   AGE   IP             NODE                             NOMINATED NODE   READINESS GATES
