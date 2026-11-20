@@ -71,6 +71,7 @@
 - Logs carry lengths and times only (`heard 28 chars, answered 31 chars, {'stt': 2.07, ...}`): what the user said and heard stays out of them. A unit test checks this.
 
 ## D14 — M2 runs as processes on the laptop; containers come in M4
+- **Status:** superseded in M4: the services run in containers (D19–D21); the three-terminal way stays for development.
 - The milestone plan had `docker compose up` running everything in M2. That needs images, which are M4's subject (non-root, read-only, no models inside). M2 runs the three services with `uv run uvicorn` in three terminals; only Ollama is a container. M4 adds the images and moves all four into compose.
 - Ports: `stt` 8001, `tts` 8002, gateway 8080, all on 127.0.0.1. The page needs a secure context for the microphone; `http://localhost` is one.
 - Done in M4: D19 (images), D20 (models volume), D21 (compose). The three-terminal way still works for development (`docker compose up -d ollama`).
@@ -84,13 +85,13 @@
 - Scoring is D8's: CER without spaces and WER after `voice.textnorm.normalize`. Limits of that: numbers spoken as words against digits in the reference count as errors, and dialect has no single spelling (the own references give one), so Gulf WER overstates the errors.
 - Six utterances per style is enough to see a large gap between MSA and dialect, not a small one.
 
-## D16 — Speech to text: `stt-small`
+## D16 — Speech to text: `stt-small` (updates D2)
 - Candidates: Whisper small and large-v3-turbo (D2), int8, beam 5, threads by D7, measured by `scripts/eval_stt.py` on both sets (D15).
 - Rule (`voice.quality.choose_stt`): a model is eligible when its p90 time per utterance on the own set is within the speech-to-text budget (2.5 s, D18). Among eligible models the lowest own-set CER wins; a CER less than one point lower than a faster model's does not count (noise on 20 utterances). If no model is within budget, the fastest is chosen and the budget is reported as missed.
 - Result: own-set CER 10.1% at p90 1.96 s, within the 2.5 s budget; over budget: stt-turbo p90 8.99 s. Numbers: `docs/evidence/m3-summary.md` and `m3-stt-*.md`.
 - The chosen model is the `STT_MODEL` default in `settings.py`; the other stays in the catalog and the lock.
 
-## D17 — Chat model on the laptop: `phi4-mini:3.8b`
+## D17 — Chat model on the laptop: `phi4-mini:3.8b` (updates D6)
 - Candidates, all through Ollama 0.40.15 on CPU, one loaded at a time: `phi4-mini:3.8b` (MIT, the M1 start), `gemma3:4b` (Gemma terms, 140 languages, no thinking mode), `qwen3.5:4b` (Apache 2.0; thinks by default, run with thinking off), `command-r7b-arabic:7b` (Cohere's Arabic-tuned 7B, CC BY-NC 4.0: fine for this non-commercial lab, not for a product), optionally `gemma4:e2b` (Apache 2.0; Ollama's default tag is 7.2 GB, over the memory budget before measuring).
 - Thinking models get `CHAT_REASONING_EFFORT=none`: `voice.llm.Assistant` then keeps the classic request (temperature, `max_tokens`) and adds `reasoning_effort: "none"`, which Ollama's `/v1` maps to thinking off. A voice turn cannot wait for a hidden reasoning pass, and thinking spends the 160-token limit before the answer.
 - Test: `eval/qa.jsonl`, 24 Arabic questions with known answers (Bahrain and Gulf facts, world facts, numbers and arithmetic), asked once each with the product's own request (system prompt, temperature 0.2, 160 tokens) by `scripts/eval_chat.py`. Correct = an accepted answer appears as whole words after normalisation; Arabic = at least 90 % Arabic letters; memory = Ollama's resident size of the loaded model.
@@ -145,6 +146,7 @@
 - Results: `docs/evidence/m4-trivy-*.txt`; image ids: `docs/evidence/m4-images.md`.
 
 ## D23 — Registry: GitHub Container Registry for what CI builds; Azure Container Registry only as the cluster's copy
+- **Status:** open: the licence is for the owner to decide; until then `stt` and `tts` are not published (D37, D38).
 - Nothing is pushed in M4: compose builds locally, and minikube (M5) can load local images. The first push is CI's (M6), so that what runs on a cluster was built from a commit and not from a laptop.
 - Build registry: **GHCR** (`ghcr.io/salmanamn/…`), public packages. Free for public images, anonymous pulls (minikube, a reader of the repository), pushes from GitHub Actions with the job's own token, and the images survive the Azure stack, which is destroyed after every session. An Azure registry as the only registry would have to live in a persistent resource group and be paid for every day to hold four images.
 - For AKS (M7/M8) the plan is an ACR Basic created with the stack, filled by `az acr import` from GHCR **by digest**, and pulled by the kubelet identity with `AcrPull`: pulls by managed identity, no pull secret, no dependence on GHCR's rate limit per outbound address, and a policy "only images from our registry" becomes possible (Project 7). Pulling straight from GHCR would also work for public images; M7 decides when the Terraform for the cluster is written. (`az acr import` and not artifact cache: Microsoft's pages disagree on whether cache rules exist in the Basic tier.)
@@ -343,7 +345,8 @@
 - On the laptop `aks-deploy.sh` keeps its settings in `~/.cache/voice-aks`, because a WSL restart clears `/tmp`. CI uses `$RUNNER_TEMP`.
 - `scripts/cost.sh FROM [TO]` reads the actual cost of the two resource groups from Cost Management, for the day after a session (D50).
 
-## D53 — AKS 1.36: from 1.37 LocalDNS takes DNS away from CoreDNS (M8, first evening)
+## D53 — AKS 1.36: from 1.37 LocalDNS takes DNS away from CoreDNS (M8, first evening) (updates D40, D41)
+- **Status:** workaround: back to 1.37 once azurerm can set the LocalDNS profile of the node pool, or with DNS rules that reach the node (Project 7).
 - The first deploy (2026-11-20): every pod with a name-based policy failed every lookup (`[Errno -3] Temporary failure in name resolution`) — the models Job five times, the gateway for `login.microsoftonline.com` as well as `huggingface.co` — while both CiliumNetworkPolicies were `Valid` and ACNS ran with `advancedNetworkPolicies: FQDN`. stt and tts waited for models that never came; `helm --wait` timed out after 25 minutes; the stack was destroyed the same night.
 - Cause (from the AKS docs; the cluster was gone before `/etc/resolv.conf` could be read): from Kubernetes 1.37, AKS Standard sets LocalDNS to `Preferred` on a node pool without an explicit LocalDNS profile and turns it on when the checks pass — one check is that no network policy exists yet, true for a new cluster. Pods then send DNS to a proxy on the node (169.254.10.x), not to the CoreDNS pods; our DNS rules allow only `k8s-app: kube-dns` pods (D44), so every query is dropped. minikube and k3s have no LocalDNS, so M5–M7 couldn't see it.
 - azurerm 4.81 has no LocalDNS setting (none in `internal/services/containers` at v4.81.0), so Terraform can't make it `Disabled`.
@@ -370,3 +373,9 @@
 
 ## D57 — What the session cost (M8)
 - Cost Management, both evenings (2026-11-19 to 21 UTC, about 1.7 h + 1.6 h of node time): $2.16 — virtual machines $2.11, Container Registry $0.03, virtual network $0.02, Foundry Models $0.01, the rest $0.00. The Free control plane costs nothing, and no ACNS line had appeared yet (re-check after 48 h). About $0.65 per hour of node, close to D50's rate; a full 4-hour evening ≈ $2.6, under D50's estimate of $3.2.
+
+## D58 — Closing Project 4: a README of what was measured, and an index of the decisions (M9)
+- The README is the project's front page: what it is and why, both stacks as Mermaid diagrams, minikube against AKS with every number linked to the evidence file it comes from, how to run it (compose, minikube, Azure through CI), the CI gates, the security model and the known limits. It holds only numbers an evidence file holds; what M8 didn't capture is listed as such, not estimated.
+- `docs/decisions-index.md`: one line per decision (the number linked to its heading, the title, the status), generated by `scripts/decisions_index.py` from the headings of this file. `tests/unit/test_decisions.py` runs in `unit` and fails when a number is missing, repeated or out of order, when an "(updates Dx)" names a later decision, or when the index isn't what the headings give. `tests_must_fail.py` repeats a number (`decision-number-repeated`) and needs that test to go red: 24 mutations.
+- A status comes from the decision itself: a `- **Status:** …` line where it is open, a workaround or superseded (D14, D23, D53), and "(updates Dx)" in a later heading. D16, D17 and D53 gained the "(updates …)" their text already implied (D2, D6, D40 and D41).
+- Left open at the close, each with its decision: the licence (D23), LocalDNS and Kubernetes 1.36 (D53), the compose baseline (D21), the chat scoring and Q20 (D17), the Entra sign-in log and what M8 didn't capture (D54–D56). The Azure AI Speech comparison is optional and not part of the close.
