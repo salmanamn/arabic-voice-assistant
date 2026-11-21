@@ -1,0 +1,9 @@
+actual cost 2026-11-20 .. 2026-11-21 (UTC), resource groups rg-voice-azure and rg-voice-azure-nodes
+    0.01 USD  rg-voice-azure         Container Registry
+    0.01 USD  rg-voice-azure         Foundry Models
+    0.00 USD  rg-voice-azure-nodes   Bandwidth
+    0.00 USD  rg-voice-azure-nodes   Load Balancer
+    0.00 USD  rg-voice-azure-nodes   Storage
+    1.26 USD  rg-voice-azure-nodes   Virtual Machines
+    0.02 USD  rg-voice-azure-nodes   Virtual Network
+total: 1.31 USD

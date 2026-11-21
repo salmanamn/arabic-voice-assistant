@@ -1,0 +1,7 @@
+gateway principal id: 24920eff-00f7-4fce-8064-2a5ff45db350
+## Azure AI Speech account: rows by category, operation and result
+Category         OperationName          ResultSignature    TableName      Oid    Rows
+---------------  ---------------------  -----------------  -------------  -----  ------
+RequestResponse  neuralvoicesynthesize  200                PrimaryResult         22
+Audit            CreateResource                            PrimaryResult         2
+Audit            Vnet                                      PrimaryResult         1

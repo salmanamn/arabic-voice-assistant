@@ -70,6 +70,19 @@ The same 20 recorded questions (`own` set: 14 Modern Standard Arabic, 6 Gulf dia
 
 On AKS every stage is within budget, the first time the whole turn is (D55). The node is faster per thread than the laptop, gpt-5.4-mini answers faster than phi4-mini on a laptop CPU, and two `stt` replicas fit in 8 real cores (D42). The M8 session itself (apply 8.5 min, deploy-chart 14.4 min, destroy 10.2 min) and its first, failed evening are in [m8-session.md](docs/evidence/m8-session.md) and [m8-try1.txt](docs/evidence/m8-try1.txt) (D53, D54).
 
+### Azure AI Speech on the same cluster (M9, optional, D59–D60)
+
+The gateway switched between its own speech pods and Azure AI Speech (ar-BH, voice `ar-BH-AliNeural`) on one running release; the same 20 recordings, each sent as the same 16 kHz WAV ([m9-speech.md](docs/evidence/m9-speech.md)).
+
+| | stt and tts pods | Azure AI Speech | Budget |
+|---|---|---|---|
+| Speech to text p90 | 1.35 s | 1.58 s | 2.5 s |
+| Text to speech p90 | 0.30 s | 1.19 s | 0.8 s |
+| Turn p90 | 3.37 s | 4.25 s | 7 s |
+| CER / WER, all 20 | 9.9 % / 18.3 % | 7.6 % / 11.3 % | — |
+
+Keyless through the gateway's workload identity (Speech User on one account), by exact host name only ([m9-netpol.md](docs/evidence/m9-netpol.md)); the session and its cost: [m9-session.md](docs/evidence/m9-session.md), [m9-cost.txt](docs/evidence/m9-cost.txt).
+
 Earlier measurements: Whisper small against large-v3-turbo on real speech and four small chat models on 24 Arabic questions ([m3-summary.md](docs/evidence/m3-summary.md), D16, D17); the turns through compose ([m4-turns.md](docs/evidence/m4-turns.md); see the known limits); the images and their scans ([m4-images.md](docs/evidence/m4-images.md), `m4-trivy-*.txt`); Ollama's cold load and how the services stop ([m5-ollama-load.md](docs/evidence/m5-ollama-load.md), [m5-stop.md](docs/evidence/m5-stop.md)); on AKS the workload identity, the operator's access and the logs in the platform workspace ([m8-identity.txt](docs/evidence/m8-identity.txt), [m8-access.txt](docs/evidence/m8-access.txt), [m8-logs.txt](docs/evidence/m8-logs.txt)).
 
 ## Run it
@@ -158,7 +171,7 @@ On `main`, `publish` pushes `ghcr.io/salmanamn/voice-gateway` and `voice-models`
 - **Compose baseline.** The compose run ([m4-turns.md](docs/evidence/m4-turns.md), p90 14.08 s) was on a busy laptop and was never repeated on an idle one (D21); minikube is the local reference.
 - **Chat scoring (D17).** "Correct" means an accepted answer appears in the reply, so it is an upper bound; 24 questions find only gross differences; the prompt's "ask to repeat" clause costs some models Q20.
 - **Scope.** Arabic only, push-to-talk, one utterance in and one out, no streaming and no conversation memory (D1, D5, D10). One node with no surge room (D42); public API server and public, Entra-only endpoints (private endpoints are Project 7's).
-- **Azure AI Speech (D59)** is an optional backend of the gateway (`./scripts/ci-deploy.sh apply --speech`, then `azureSpeech.stt` / `tts`): keyless through the workload identity, short-audio recognition takes 16 kHz WAV or Ogg Opus only (so not the WebM that Chrome records on the page), and its comparison evening is optional.
+- **Azure AI Speech (D59, D60)** is an optional backend of the gateway, compared once on AKS (above). Short-audio recognition takes 16 kHz WAV or Ogg Opus only, so the WebM that Chrome records on the page needs the pods.
 
 ## Decisions
 
