@@ -4,7 +4,7 @@ Generated from the headings of [decisions.md](decisions.md) by `scripts/decision
 hand. `tests/unit/test_decisions.py` fails when this file and the headings disagree, or when a number is
 missing or used twice.
 
-60 decisions (D1–D60): 7 updated by a later one, 4 with a status of
+61 decisions (D1–D61): 7 updated by a later one, 4 with a status of
 their own (open questions, workarounds); the rest accepted as written.
 
 | # | Decision | Status |
@@ -31,7 +31,7 @@ their own (open questions, workarounds); the rest accepted as written.
 | [D20](decisions.md#d20--models-come-from-a-volume-filled-and-checked-by-a-job) | Models come from a volume, filled and checked by a job | accepted |
 | [D21](decisions.md#d21--compose-runs-all-four-services) | Compose runs all four services | accepted |
 | [D22](decisions.md#d22--scanning-and-pins) | Scanning and pins | accepted |
-| [D23](decisions.md#d23--registry-github-container-registry-for-what-ci-builds-azure-container-registry-only-as-the-clusters-copy) | Registry: GitHub Container Registry for what CI builds; Azure Container Registry only as the cluster's copy | open: the licence is for the owner to decide; until then `stt` and `tts` are not published (D37, D38); updated by D38 |
+| [D23](decisions.md#d23--registry-github-container-registry-for-what-ci-builds-azure-container-registry-only-as-the-clusters-copy) | Registry: GitHub Container Registry for what CI builds; Azure Container Registry only as the cluster's copy | closed by D61: the code is MIT; stt and tts stay unpublished; updated by D38, D61 |
 | [D24](decisions.md#d24--speech-models-on-kubernetes-a-job-writes-the-volume-every-pod-checks-it) | Speech models on Kubernetes: a Job writes the volume, every pod checks it | accepted |
 | [D25](decisions.md#d25--the-chat-model-pulled-by-a-job-pinned-by-id-loaded-before-ollama-is-ready) | The chat model: pulled by a Job, pinned by id, loaded before Ollama is ready | accepted |
 | [D26](decisions.md#d26--requests-and-limits) | Requests and limits | accepted |
@@ -69,3 +69,4 @@ their own (open questions, workarounds); the rest accepted as written.
 | [D58](decisions.md#d58--closing-project-4-a-readme-of-what-was-measured-and-an-index-of-the-decisions-m9) | Closing Project 4: a README of what was measured, and an index of the decisions (M9) | accepted |
 | [D59](decisions.md#d59--azure-ai-speech-as-an-optional-backend-of-the-gateway-keyless-m9) | Azure AI Speech as an optional backend of the gateway, keyless (M9) | optional: built for the comparison evening (M9 Part C); M9 closes without it |
 | [D60](decisions.md#d60--azure-ai-speech-against-faster-whisper-and-piper-on-aks-measured-m9) | Azure AI Speech against faster-whisper and Piper on AKS, measured (M9) | accepted |
+| [D61](decisions.md#d61--licence-the-code-is-mit-the-stt-and-tts-images-stay-unpublished-updates-d23) | Licence: the code is MIT; the stt and tts images stay unpublished | accepted; updates D23 |

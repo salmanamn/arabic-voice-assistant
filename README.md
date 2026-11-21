@@ -164,7 +164,7 @@ On `main`, `publish` pushes `ghcr.io/salmanamn/voice-gateway` and `voice-models`
 
 ## Known limits
 
-- **Licence (D23, open).** The repository has no licence file. `stt` (PyAV bundles GPL encoders) and `tts` (Piper, GPL-3.0-or-later) are not published to GHCR; the deploy job pushes CI's tested bytes from the workflow artifact to the stack's private ACR (D38), so a deploy must use a `main` run from the last 30 days.
+- **Licence (D61).** The code is MIT. stt (PyAV bundles GPL encoders) and tts (Piper, GPL-3.0-or-later) are not published to GHCR; the deploy job pushes CI's tested bytes from the workflow artifact to the stack's private ACR (D38), so a deploy must use a main run from the last 30 days.
 - **Kubernetes 1.36, not 1.37 (D53, workaround).** From 1.37 AKS turns LocalDNS on for a new node pool, pods send DNS to the node, and the DNS rules (CoreDNS pods only) drop every lookup. azurerm 4.81 can't set the LocalDNS profile; a Conftest rule keeps the cluster below 1.37.
 - **Entra sign-in logs.** A Free tenant shows them in the portal for 7 days and can't export them; the workload identity's sign-in line wasn't recorded, and Azure OpenAI's request log carries no caller object id (D56).
 - **Not captured in M8:** the guard log query, the IPv4 port-80 test (only IPv6's "network unreachable" was recorded), how long the images step took (so whether D51's re-sign-in was needed), FailedScheduling events (D54–D56).

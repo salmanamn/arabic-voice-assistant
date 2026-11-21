@@ -146,7 +146,7 @@
 - Results: `docs/evidence/m4-trivy-*.txt`; image ids: `docs/evidence/m4-images.md`.
 
 ## D23 — Registry: GitHub Container Registry for what CI builds; Azure Container Registry only as the cluster's copy
-- **Status:** open: the licence is for the owner to decide; until then `stt` and `tts` are not published (D37, D38).
+- **Status:** closed by D61: the code is MIT; stt and tts stay unpublished.
 - Nothing is pushed in M4: compose builds locally, and minikube (M5) can load local images. The first push is CI's (M6), so that what runs on a cluster was built from a commit and not from a laptop.
 - Build registry: **GHCR** (`ghcr.io/salmanamn/…`), public packages. Free for public images, anonymous pulls (minikube, a reader of the repository), pushes from GitHub Actions with the job's own token, and the images survive the Azure stack, which is destroyed after every session. An Azure registry as the only registry would have to live in a persistent resource group and be paid for every day to hold four images.
 - For AKS (M7/M8) the plan is an ACR Basic created with the stack, filled by `az acr import` from GHCR **by digest**, and pulled by the kubelet identity with `AcrPull`: pulls by managed identity, no pull secret, no dependence on GHCR's rate limit per outbound address, and a policy "only images from our registry" becomes possible (Project 7). Pulling straight from GHCR would also work for public images; M7 decides when the Terraform for the cluster is written. (`az acr import` and not artifact cache: Microsoft's pages disagree on whether cache rules exist in the Basic tier.)
@@ -396,3 +396,8 @@
 - Keyless and by name, as designed: the .m4a recording was refused with 400 unsupported_audio before any call; 67/67 flows from the laptop (m9-netpol.md). In CI the same check gave 64/67, then 65/67: its probe pods sleep 600 s, and 67 flows (≈22 s DNS timeouts each for the unlabelled pod's named hosts) outlast them, so the last checks saw `error`. Three manual checks from a fresh unlabelled pod were all `closed`; `check_netpol.py`'s probes now sleep 1800 s. The Speech account's resource logs show 22 synthesis requests (200: self-check, warm-up, 20 turns), no rows for short-audio recognition, and no caller object id (m9-speech-logs.txt).
 - Cost: <fill: the total of m9-cost.txt and its Speech line>.
 - Choice: the pods stay the default on AKS. Azure Speech recognises better (Gulf above all), but its synthesis breaks the 0.8 s budget and adds ≈0.9 s to every turn. Azure recognition with Piper's synthesis is the combination worth trying when recognition quality matters most (each step switches separately, D59). The page's Chrome recordings (WebM) need the pods either way (D59).
+
+## D61 — Licence: the code is MIT; the stt and tts images stay unpublished (updates D23)
+- The repository's own code is MIT (`LICENSE`). It contains no GPL source: Piper and PyAV are dependencies, installed at build time, never committed.
+- The `stt` and `tts` images are not published: they redistribute GPL software (Piper in `tts`; PyAV's bundled x264/x265 in `stt`, D23), and the project does not need public images. Deploys keep pushing CI's tested bytes to the stack's private ACR (D38).
+- MIT is GPL-compatible, so publishing them later stays possible: add the notices and a source offer, then move `stt tts` into `PUBLISH` in `ci.yml` and drop the push loop in `aks-deploy.sh`.
