@@ -64,7 +64,7 @@ def probe_pod(namespace: str, name: str, component: str, image: str, instance: s
                     "name": "probe",
                     "image": image,
                     "imagePullPolicy": "IfNotPresent",
-                    "command": ["python", "-c", "import time; time.sleep(600)"],
+                    "command": ["python", "-c", "import time; time.sleep(1800)"],
                     "resources": {"requests": {"cpu": "10m", "memory": "32Mi"}, "limits": {"memory": "64Mi"}},
                     "securityContext": {
                         "allowPrivilegeEscalation": False,

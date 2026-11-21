@@ -4,7 +4,7 @@ Generated from the headings of [decisions.md](decisions.md) by `scripts/decision
 hand. `tests/unit/test_decisions.py` fails when this file and the headings disagree, or when a number is
 missing or used twice.
 
-59 decisions (D1–D59): 7 updated by a later one, 4 with a status of
+60 decisions (D1–D60): 7 updated by a later one, 4 with a status of
 their own (open questions, workarounds); the rest accepted as written.
 
 | # | Decision | Status |
@@ -68,3 +68,4 @@ their own (open questions, workarounds); the rest accepted as written.
 | [D57](decisions.md#d57--what-the-session-cost-m8) | What the session cost (M8) | accepted |
 | [D58](decisions.md#d58--closing-project-4-a-readme-of-what-was-measured-and-an-index-of-the-decisions-m9) | Closing Project 4: a README of what was measured, and an index of the decisions (M9) | accepted |
 | [D59](decisions.md#d59--azure-ai-speech-as-an-optional-backend-of-the-gateway-keyless-m9) | Azure AI Speech as an optional backend of the gateway, keyless (M9) | optional: built for the comparison evening (M9 Part C); M9 closes without it |
+| [D60](decisions.md#d60--azure-ai-speech-against-faster-whisper-and-piper-on-aks-measured-m9) | Azure AI Speech against faster-whisper and Piper on AKS, measured (M9) | accepted |
